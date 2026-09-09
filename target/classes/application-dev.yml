@@ -1,0 +1,11 @@
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/recovery_system
+    username: recovery_app
+    password: recovery_app
+
+logging:
+  level:
+    com.recoverysystem: DEBUG
+    org.hibernate.SQL: DEBUG
+    org.hibernate.orm.jdbc.bind: TRACE
