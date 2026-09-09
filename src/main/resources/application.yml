@@ -1,0 +1,52 @@
+spring:
+  application:
+    name: appointment-recovery-system
+
+  datasource:
+    url: jdbc:postgresql://localhost:5432/recovery_system
+    username: recovery_app
+    password: recovery_app
+    driver-class-name: org.postgresql.Driver
+
+  jpa:
+    hibernate:
+      # Flyway owns schema. Hibernate must never auto-generate DDL.
+      ddl-auto: validate
+    open-in-view: false
+    properties:
+      hibernate:
+        format_sql: true
+        jdbc:
+          time_zone: UTC
+
+  flyway:
+    enabled: true
+    baseline-on-migrate: false
+    locations: classpath:db/migration
+
+  session:
+    store-type: jdbc
+    timeout: 30m
+
+server:
+  port: 8080
+  servlet:
+    session:
+      cookie:
+        http-only: true
+        same-site: lax
+      timeout: 30m
+
+# Application-specific configuration.
+# Handbook rule: timezone logic must never be hardcoded into the domain.
+recovery-system:
+  clinic:
+    timezone: America/New_York
+  worker:
+    recovery-poll-interval-ms: 60000
+    offer-expiry-poll-interval-ms: 30000
+
+logging:
+  level:
+    com.recoverysystem: INFO
+    org.hibernate.SQL: WARN
