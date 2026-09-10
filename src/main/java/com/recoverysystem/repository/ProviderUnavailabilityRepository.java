@@ -1,12 +1,19 @@
 package com.recoverysystem.repository;
 
 import com.recoverysystem.domain.entity.ProviderUnavailability;
+import jakarta.persistence.LockModeType;
 import java.time.Instant;
+import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 public interface ProviderUnavailabilityRepository extends JpaRepository<ProviderUnavailability, Long> {
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT pu FROM ProviderUnavailability pu WHERE pu.id = :id")
+    Optional<ProviderUnavailability> findByIdForUpdate(@Param("id") Long id);
 
     @Query("""
             SELECT CASE WHEN COUNT(pu) > 0 THEN true ELSE false END

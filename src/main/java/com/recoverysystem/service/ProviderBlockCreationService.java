@@ -4,20 +4,14 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.recoverysystem.domain.entity.AuditLog;
 import com.recoverysystem.domain.entity.ProviderUnavailability;
-import com.recoverysystem.domain.entity.RecoveryJob;
-import com.recoverysystem.domain.entity.SlotOffer;
 import com.recoverysystem.domain.enums.ActorType;
 import com.recoverysystem.domain.enums.ProviderUnavailabilityStatus;
-import com.recoverysystem.domain.enums.RecoveryJobStatus;
-import com.recoverysystem.domain.enums.SlotOfferStatus;
 import com.recoverysystem.exception.InvalidBlockIntervalException;
 import com.recoverysystem.exception.ProviderNotFoundException;
 import com.recoverysystem.repository.AppointmentRepository;
 import com.recoverysystem.repository.AuditLogRepository;
 import com.recoverysystem.repository.ProviderRepository;
 import com.recoverysystem.repository.ProviderUnavailabilityRepository;
-import com.recoverysystem.repository.RecoveryJobRepository;
-import com.recoverysystem.repository.SlotOfferRepository;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
@@ -30,14 +24,11 @@ import org.springframework.transaction.annotation.Transactional;
 public class ProviderBlockCreationService {
 
     private static final String BLOCK_PENDING_REASON = "AWAITING_CONFLICT_RESOLUTION";
-    private static final String JOB_SUPPRESSION_REASON = "PROVIDER_BLOCK_ACTIVATED";
-    private static final String OFFER_CANCELLATION_REASON = "RECOVERY_JOB_SUPPRESSED";
 
     private final ProviderRepository providerRepository;
     private final AppointmentRepository appointmentRepository;
     private final ProviderUnavailabilityRepository providerUnavailabilityRepository;
-    private final RecoveryJobRepository recoveryJobRepository;
-    private final SlotOfferRepository slotOfferRepository;
+    private final RecoveryJobSuppressionCascade recoveryJobSuppressionCascade;
     private final AuditLogRepository auditLogRepository;
     private final ObjectMapper objectMapper;
 
@@ -45,15 +36,13 @@ public class ProviderBlockCreationService {
             ProviderRepository providerRepository,
             AppointmentRepository appointmentRepository,
             ProviderUnavailabilityRepository providerUnavailabilityRepository,
-            RecoveryJobRepository recoveryJobRepository,
-            SlotOfferRepository slotOfferRepository,
+            RecoveryJobSuppressionCascade recoveryJobSuppressionCascade,
             AuditLogRepository auditLogRepository,
             ObjectMapper objectMapper) {
         this.providerRepository = providerRepository;
         this.appointmentRepository = appointmentRepository;
         this.providerUnavailabilityRepository = providerUnavailabilityRepository;
-        this.recoveryJobRepository = recoveryJobRepository;
-        this.slotOfferRepository = slotOfferRepository;
+        this.recoveryJobSuppressionCascade = recoveryJobSuppressionCascade;
         this.auditLogRepository = auditLogRepository;
         this.objectMapper = objectMapper;
     }
@@ -110,19 +99,8 @@ public class ProviderBlockCreationService {
         ProviderUnavailability persistedBlock =
                 providerUnavailabilityRepository.save(activeBlock);
 
-        List<RecoveryJob> recoveryJobs =
-                recoveryJobRepository.findOpenOverlappingByProviderForUpdate(
-                        providerId, startAt, endAt);
-        List<Long> recoveryJobIds = recoveryJobs.stream().map(RecoveryJob::getId).toList();
-        List<SlotOffer> slotOffers = recoveryJobIds.isEmpty()
-                ? List.of()
-                : slotOfferRepository.findOfferedByRecoveryJobIdsForUpdate(recoveryJobIds);
-
-        recoveryJobs.forEach(recoveryJob -> {
-            recoveryJob.setStatus(RecoveryJobStatus.SUPPRESSED);
-            recoveryJob.setSuppressionReason(JOB_SUPPRESSION_REASON);
-        });
-        slotOffers.forEach(slotOffer -> slotOffer.setStatus(SlotOfferStatus.CANCELLED));
+        recoveryJobSuppressionCascade.suppressAffectedRecoveryJobs(
+                providerId, startAt, endAt, actorType, actorUserId);
 
         auditLogRepository.save(createAuditLog(
                 "ProviderUnavailability",
@@ -131,20 +109,6 @@ public class ProviderBlockCreationService {
                 actorType,
                 actorUserId,
                 null));
-        recoveryJobs.forEach(recoveryJob -> auditLogRepository.save(createAuditLog(
-                "RecoveryJob",
-                recoveryJob.getId(),
-                "SUPPRESS",
-                actorType,
-                actorUserId,
-                null)));
-        slotOffers.forEach(slotOffer -> auditLogRepository.save(createAuditLog(
-                "SlotOffer",
-                slotOffer.getId(),
-                "CANCEL",
-                actorType,
-                actorUserId,
-                OFFER_CANCELLATION_REASON)));
 
         return persistedBlock;
     }
