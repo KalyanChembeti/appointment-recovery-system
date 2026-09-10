@@ -1,13 +1,18 @@
 package com.recoverysystem.service;
 
 import com.recoverysystem.domain.entity.Appointment;
+import com.recoverysystem.domain.entity.AppointmentType;
 import com.recoverysystem.domain.entity.AuditLog;
+import com.recoverysystem.domain.entity.Provider;
 import com.recoverysystem.domain.entity.ProviderSchedule;
 import com.recoverysystem.domain.enums.ActorType;
 import com.recoverysystem.domain.enums.AppointmentStatus;
+import com.recoverysystem.exception.AppointmentTypeNotFoundException;
+import com.recoverysystem.exception.AppointmentTypeSpecialtyMismatchException;
 import com.recoverysystem.exception.ProviderNotFoundException;
 import com.recoverysystem.exception.ProviderUnavailableException;
 import com.recoverysystem.repository.AppointmentRepository;
+import com.recoverysystem.repository.AppointmentTypeRepository;
 import com.recoverysystem.repository.AuditLogRepository;
 import com.recoverysystem.repository.ProviderRepository;
 import com.recoverysystem.repository.ProviderScheduleRepository;
@@ -30,6 +35,7 @@ public class DirectBookingService {
     private final ProviderRepository providerRepository;
     private final ProviderUnavailabilityRepository providerUnavailabilityRepository;
     private final ProviderScheduleRepository providerScheduleRepository;
+    private final AppointmentTypeRepository appointmentTypeRepository;
     private final AppointmentRepository appointmentRepository;
     private final AuditLogRepository auditLogRepository;
     private final ZoneId clinicTimeZone;
@@ -38,12 +44,14 @@ public class DirectBookingService {
             ProviderRepository providerRepository,
             ProviderUnavailabilityRepository providerUnavailabilityRepository,
             ProviderScheduleRepository providerScheduleRepository,
+            AppointmentTypeRepository appointmentTypeRepository,
             AppointmentRepository appointmentRepository,
             AuditLogRepository auditLogRepository,
             @Value("${recovery-system.clinic.timezone}") String clinicTimeZone) {
         this.providerRepository = providerRepository;
         this.providerUnavailabilityRepository = providerUnavailabilityRepository;
         this.providerScheduleRepository = providerScheduleRepository;
+        this.appointmentTypeRepository = appointmentTypeRepository;
         this.appointmentRepository = appointmentRepository;
         this.auditLogRepository = auditLogRepository;
         this.clinicTimeZone = ZoneId.of(clinicTimeZone);
@@ -57,8 +65,17 @@ public class DirectBookingService {
             Instant startAt,
             Instant endAt,
             Long actorUserId) {
-        providerRepository.findByIdForUpdate(providerId)
+        Provider provider = providerRepository.findByIdForUpdate(providerId)
                 .orElseThrow(() -> new ProviderNotFoundException(providerId));
+        AppointmentType appointmentType = appointmentTypeRepository.findById(appointmentTypeId)
+                .orElseThrow(() -> new AppointmentTypeNotFoundException(appointmentTypeId));
+        if (!provider.getSpecialtyId().equals(appointmentType.getSpecialtyId())) {
+            throw new AppointmentTypeSpecialtyMismatchException(
+                    appointmentTypeId,
+                    appointmentType.getSpecialtyId(),
+                    providerId,
+                    provider.getSpecialtyId());
+        }
 
         boolean hasBlockingUnavailability =
                 providerUnavailabilityRepository.existsOverlappingActiveOrPendingBlock(

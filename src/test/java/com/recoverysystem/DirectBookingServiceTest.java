@@ -18,6 +18,8 @@ import com.recoverysystem.domain.enums.ActorType;
 import com.recoverysystem.domain.enums.AppointmentStatus;
 import com.recoverysystem.domain.enums.ProviderUnavailabilityStatus;
 import com.recoverysystem.domain.enums.UserRole;
+import com.recoverysystem.exception.AppointmentTypeNotFoundException;
+import com.recoverysystem.exception.AppointmentTypeSpecialtyMismatchException;
 import com.recoverysystem.exception.PatientDoubleBookedException;
 import com.recoverysystem.exception.ProviderDoubleBookedException;
 import com.recoverysystem.exception.ProviderNotFoundException;
@@ -104,6 +106,12 @@ class DirectBookingServiceTest {
         Instant startAt = atClinicTime(date, 12, 0);
         Instant endAt = atClinicTime(date, 13, 0);
 
+        assertEquals(
+                providerRepository.findById(fixture.providerId()).orElseThrow().getSpecialtyId(),
+                appointmentTypeRepository.findById(fixture.appointmentTypeId())
+                        .orElseThrow()
+                        .getSpecialtyId());
+
         Appointment appointment = directBookingService.bookAppointment(
                 fixture.firstPatientId(),
                 fixture.providerId(),
@@ -126,6 +134,54 @@ class DirectBookingServiceTest {
         AuditLog auditLog = matchingAuditLogs.getFirst();
         assertEquals(ActorType.USER, auditLog.getActorType());
         assertEquals(fixture.firstPatientId(), auditLog.getActorUserId());
+    }
+
+    @Test
+    void mismatchedAppointmentTypeAndProviderSpecialtiesAreRejected() {
+        LocalDate date = LocalDate.of(2032, 11, 11);
+        BookingFixture fixture = createFixture(date);
+
+        Specialty otherSpecialty = new Specialty();
+        otherSpecialty.setName(uniqueValue("Other Specialty"));
+        Specialty savedOtherSpecialty = specialtyRepository.saveAndFlush(otherSpecialty);
+
+        AppointmentType mismatchedAppointmentType = new AppointmentType();
+        mismatchedAppointmentType.setName(uniqueValue("Mismatched Appointment Type"));
+        mismatchedAppointmentType.setDurationMinutes(60);
+        mismatchedAppointmentType.setSpecialtyId(savedOtherSpecialty.getId());
+        mismatchedAppointmentType.setActive(true);
+        AppointmentType savedMismatchedAppointmentType =
+                appointmentTypeRepository.saveAndFlush(mismatchedAppointmentType);
+
+        assertThrows(
+                AppointmentTypeSpecialtyMismatchException.class,
+                () -> directBookingService.bookAppointment(
+                        fixture.firstPatientId(),
+                        fixture.providerId(),
+                        savedMismatchedAppointmentType.getId(),
+                        atClinicTime(date, 12, 0),
+                        atClinicTime(date, 13, 0),
+                        null));
+
+        assertEquals(0, appointmentCountForProvider(fixture.providerId()));
+    }
+
+    @Test
+    void nonexistentAppointmentTypeIsRejected() {
+        LocalDate date = LocalDate.of(2032, 12, 9);
+        BookingFixture fixture = createFixture(date);
+
+        assertThrows(
+                AppointmentTypeNotFoundException.class,
+                () -> directBookingService.bookAppointment(
+                        fixture.firstPatientId(),
+                        fixture.providerId(),
+                        Long.MAX_VALUE,
+                        atClinicTime(date, 12, 0),
+                        atClinicTime(date, 13, 0),
+                        null));
+
+        assertEquals(0, appointmentCountForProvider(fixture.providerId()));
     }
 
     @Test
