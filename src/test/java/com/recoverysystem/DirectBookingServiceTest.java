@@ -117,7 +117,6 @@ class DirectBookingServiceTest {
                 fixture.providerId(),
                 fixture.appointmentTypeId(),
                 startAt,
-                endAt,
                 fixture.firstPatientId());
 
         assertNotNull(appointment.getId());
@@ -160,7 +159,6 @@ class DirectBookingServiceTest {
                         fixture.providerId(),
                         savedMismatchedAppointmentType.getId(),
                         atClinicTime(date, 12, 0),
-                        atClinicTime(date, 13, 0),
                         null));
 
         assertEquals(0, appointmentCountForProvider(fixture.providerId()));
@@ -178,7 +176,6 @@ class DirectBookingServiceTest {
                         fixture.providerId(),
                         Long.MAX_VALUE,
                         atClinicTime(date, 12, 0),
-                        atClinicTime(date, 13, 0),
                         null));
 
         assertEquals(0, appointmentCountForProvider(fixture.providerId()));
@@ -189,18 +186,16 @@ class DirectBookingServiceTest {
         LocalDate date = LocalDate.of(2032, 2, 12);
         BookingFixture fixture = createFixture(date);
         Instant firstStart = atClinicTime(date, 12, 0);
-        Instant firstEnd = atClinicTime(date, 13, 0);
 
         directBookingService.bookAppointment(
                 fixture.firstPatientId(), fixture.providerId(), fixture.appointmentTypeId(),
-                firstStart, firstEnd, null);
+                firstStart, null);
 
         assertThrows(ProviderDoubleBookedException.class, () -> directBookingService.bookAppointment(
                 fixture.secondPatientId(),
                 fixture.providerId(),
                 fixture.appointmentTypeId(),
                 atClinicTime(date, 12, 30),
-                atClinicTime(date, 13, 30),
                 null));
 
         assertEquals(1, appointmentCountForProvider(fixture.providerId()));
@@ -217,7 +212,6 @@ class DirectBookingServiceTest {
                 fixture.providerId(),
                 fixture.appointmentTypeId(),
                 atClinicTime(date, 12, 0),
-                atClinicTime(date, 13, 0),
                 null);
 
         assertThrows(PatientDoubleBookedException.class, () -> directBookingService.bookAppointment(
@@ -225,7 +219,6 @@ class DirectBookingServiceTest {
                 secondProvider.getId(),
                 fixture.appointmentTypeId(),
                 atClinicTime(date, 12, 30),
-                atClinicTime(date, 13, 30),
                 null));
     }
 
@@ -239,14 +232,12 @@ class DirectBookingServiceTest {
                 fixture.providerId(),
                 fixture.appointmentTypeId(),
                 atClinicTime(date, 12, 0),
-                atClinicTime(date, 13, 0),
                 null);
         Appointment second = directBookingService.bookAppointment(
                 fixture.secondPatientId(),
                 fixture.providerId(),
                 fixture.appointmentTypeId(),
                 atClinicTime(date, 13, 0),
-                atClinicTime(date, 14, 0),
                 null);
 
         assertNotNull(first.getId());
@@ -275,7 +266,6 @@ class DirectBookingServiceTest {
                 fixture.providerId(),
                 fixture.appointmentTypeId(),
                 atClinicTime(date, 12, 0),
-                atClinicTime(date, 13, 0),
                 null);
 
         assertNotNull(appointment.getId());
@@ -292,7 +282,6 @@ class DirectBookingServiceTest {
                 fixture.providerId(),
                 fixture.appointmentTypeId(),
                 atClinicTime(date, 8, 0),
-                atClinicTime(date, 9, 0),
                 null));
 
         assertEquals(0, appointmentCountForProvider(fixture.providerId()));
@@ -308,7 +297,6 @@ class DirectBookingServiceTest {
                 Long.MAX_VALUE,
                 fixture.appointmentTypeId(),
                 atClinicTime(date, 12, 0),
-                atClinicTime(date, 13, 0),
                 null));
     }
 
@@ -317,16 +305,15 @@ class DirectBookingServiceTest {
         LocalDate date = LocalDate.of(2032, 10, 14);
         BookingFixture fixture = createFixture(date);
         Instant startAt = atClinicTime(date, 12, 0);
-        Instant endAt = atClinicTime(date, 13, 0);
         CountDownLatch ready = new CountDownLatch(2);
         CountDownLatch start = new CountDownLatch(1);
         ExecutorService executor = Executors.newFixedThreadPool(2);
 
         try {
             Future<Object> firstAttempt = executor.submit(() -> attemptBookingAfterSignal(
-                    fixture.firstPatientId(), fixture, startAt, endAt, ready, start));
+                    fixture.firstPatientId(), fixture, startAt, ready, start));
             Future<Object> secondAttempt = executor.submit(() -> attemptBookingAfterSignal(
-                    fixture.secondPatientId(), fixture, startAt, endAt, ready, start));
+                    fixture.secondPatientId(), fixture, startAt, ready, start));
 
             assertTrue(ready.await(10, TimeUnit.SECONDS), "Booking threads did not become ready");
             start.countDown();
@@ -359,7 +346,6 @@ class DirectBookingServiceTest {
                         fixture.providerId(),
                         fixture.appointmentTypeId(),
                         atClinicTime(date, 12, 0),
-                        atClinicTime(date, 13, 0),
                         null));
 
         assertInstanceOf(ProviderUnavailableException.class, exception);
@@ -370,7 +356,6 @@ class DirectBookingServiceTest {
             Long patientId,
             BookingFixture fixture,
             Instant startAt,
-            Instant endAt,
             CountDownLatch ready,
             CountDownLatch start) throws InterruptedException {
         ready.countDown();
@@ -383,7 +368,6 @@ class DirectBookingServiceTest {
                     fixture.providerId(),
                     fixture.appointmentTypeId(),
                     startAt,
-                    endAt,
                     null);
         } catch (RuntimeException exception) {
             return exception;
