@@ -17,4 +17,11 @@ public interface SlotOfferRepository extends JpaRepository<SlotOffer, Long> {
     List<SlotOffer> findByWaitlistEntryIdAndStatusForUpdate(
             @Param("waitlistEntryId") Long waitlistEntryId,
             @Param("status") SlotOfferStatus status);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT s FROM SlotOffer s WHERE s.status = "
+            + "com.recoverysystem.domain.enums.SlotOfferStatus.OFFERED "
+            + "AND s.recoveryJobId IN :recoveryJobIds ORDER BY s.id ASC")
+    List<SlotOffer> findOfferedByRecoveryJobIdsForUpdate(
+            @Param("recoveryJobIds") List<Long> recoveryJobIds);
 }
