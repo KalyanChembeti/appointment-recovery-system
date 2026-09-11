@@ -18,6 +18,10 @@ public interface SlotOfferRepository extends JpaRepository<SlotOffer, Long> {
     @Query("SELECT s FROM SlotOffer s WHERE s.id = :id")
     Optional<SlotOffer> findByIdForUpdate(@Param("id") Long id);
 
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT s FROM SlotOffer s WHERE s.id IN :ids ORDER BY s.id ASC")
+    List<SlotOffer> findAllByIdInForUpdate(@Param("ids") List<Long> ids);
+
     @Query("SELECT s.id FROM SlotOffer s WHERE s.status = "
             + "com.recoverysystem.domain.enums.SlotOfferStatus.OFFERED "
             + "AND s.expiresAt < :now ORDER BY s.createdAt ASC")

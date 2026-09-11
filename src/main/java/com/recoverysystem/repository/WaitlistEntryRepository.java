@@ -22,4 +22,9 @@ public interface WaitlistEntryRepository extends JpaRepository<WaitlistEntry, Lo
     List<WaitlistEntry> findByCurrentAppointmentIdAndStatusForUpdate(
             @Param("appointmentId") Long appointmentId,
             @Param("status") WaitlistEntryStatus status);
+
+    @Query("SELECT w FROM WaitlistEntry w WHERE w.currentAppointmentId = :appointmentId "
+            + "AND w.status = com.recoverysystem.domain.enums.WaitlistEntryStatus.FULFILLED")
+    List<WaitlistEntry> findFulfilledByCurrentAppointmentId(
+            @Param("appointmentId") Long appointmentId);
 }
