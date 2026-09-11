@@ -23,6 +23,43 @@ public interface SlotOfferRepository extends JpaRepository<SlotOffer, Long> {
             + "AND s.expiresAt < :now ORDER BY s.createdAt ASC")
     List<Long> findStaleOfferedIds(@Param("now") Instant now, Pageable pageable);
 
+    @Query("""
+            SELECT so.id
+            FROM SlotOffer so
+            WHERE so.status = com.recoverysystem.domain.enums.SlotOfferStatus.OFFERED
+              AND so.waitlistEntryId IN :waitlistEntryIds
+              AND so.id != :excludedOfferId
+            """)
+    List<Long> findOfferedIdsByWaitlistEntryIdsExcludingOffer(
+            @Param("waitlistEntryIds") List<Long> waitlistEntryIds,
+            @Param("excludedOfferId") Long excludedOfferId);
+
+    @Query("""
+            SELECT so.id
+            FROM SlotOffer so
+            WHERE so.status = com.recoverysystem.domain.enums.SlotOfferStatus.OFFERED
+              AND so.waitlistEntryId IN (
+                  SELECT entry.id
+                  FROM WaitlistEntry entry
+                  WHERE entry.patientId = :patientId
+                    AND entry.status = com.recoverysystem.domain.enums.WaitlistEntryStatus.ACTIVE
+                    AND entry.currentAppointmentId != :excludedAppointmentId
+              )
+              AND EXISTS (
+                  SELECT 1
+                  FROM RecoveryJob job, Appointment appointment
+                  WHERE job.id = so.recoveryJobId
+                    AND appointment.id = job.sourceAppointmentId
+                    AND appointment.startAt < :intervalEnd
+                    AND appointment.endAt > :intervalStart
+              )
+            """)
+    List<Long> findOfferedIdsForOtherActivePatientEntriesOverlapping(
+            @Param("patientId") Long patientId,
+            @Param("excludedAppointmentId") Long excludedAppointmentId,
+            @Param("intervalStart") Instant intervalStart,
+            @Param("intervalEnd") Instant intervalEnd);
+
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT s FROM SlotOffer s WHERE s.waitlistEntryId = :waitlistEntryId "
             + "AND s.status = :status ORDER BY s.id ASC")
