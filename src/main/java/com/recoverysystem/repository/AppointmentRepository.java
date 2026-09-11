@@ -29,4 +29,12 @@ public interface AppointmentRepository extends JpaRepository<Appointment, Long> 
             @Param("providerId") Long providerId,
             @Param("blockStart") Instant blockStart,
             @Param("blockEnd") Instant blockEnd);
+
+    @Query("SELECT a.id FROM Appointment a WHERE a.patientId = :patientId "
+            + "AND a.status = com.recoverysystem.domain.enums.AppointmentStatus.SCHEDULED "
+            + "AND a.startAt < :endAt AND a.endAt > :startAt")
+    List<Long> findScheduledOverlappingIdsForPatient(
+            @Param("patientId") Long patientId,
+            @Param("startAt") Instant startAt,
+            @Param("endAt") Instant endAt);
 }

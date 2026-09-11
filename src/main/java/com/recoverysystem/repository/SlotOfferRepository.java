@@ -64,6 +64,13 @@ public interface SlotOfferRepository extends JpaRepository<SlotOffer, Long> {
             @Param("intervalStart") Instant intervalStart,
             @Param("intervalEnd") Instant intervalEnd);
 
+    @Query("SELECT COUNT(so) > 0 FROM SlotOffer so WHERE so.recoveryJobId = :recoveryJobId "
+            + "AND so.waitlistEntryId IN (SELECT we.id FROM WaitlistEntry we "
+            + "WHERE we.patientId = :patientId)")
+    boolean existsPriorOfferForPatientAndJob(
+            @Param("recoveryJobId") Long recoveryJobId,
+            @Param("patientId") Long patientId);
+
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT s FROM SlotOffer s WHERE s.waitlistEntryId = :waitlistEntryId "
             + "AND s.status = :status ORDER BY s.id ASC")
