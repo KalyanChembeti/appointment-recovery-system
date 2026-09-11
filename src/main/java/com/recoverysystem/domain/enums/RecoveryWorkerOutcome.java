@@ -1,0 +1,12 @@
+package com.recoverysystem.domain.enums;
+
+public enum RecoveryWorkerOutcome {
+    NO_OPEN_JOBS,
+    OFFER_CREATED,
+    RELEASED_INTERVAL_OCCUPIED,
+    PROVIDER_ACTIVELY_BLOCKED,
+    PROVIDER_PENDING_BLOCKED,
+    LEAD_TIME_CLOSED,
+    NO_ELIGIBLE_CANDIDATE,
+    CANDIDATE_BECAME_STALE
+}
