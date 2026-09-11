@@ -39,4 +39,13 @@ public interface ProviderUnavailabilityRepository extends JpaRepository<Provider
             @Param("providerId") Long providerId,
             @Param("startAt") Instant startAt,
             @Param("endAt") Instant endAt);
+
+    @Query("SELECT COUNT(pu) > 0 FROM ProviderUnavailability pu WHERE pu.providerId = "
+            + ":providerId AND pu.status = com.recoverysystem.domain.enums."
+            + "ProviderUnavailabilityStatus.PENDING AND pu.startAt < :endAt AND pu.endAt > "
+            + ":startAt")
+    boolean existsOverlappingPendingBlock(
+            @Param("providerId") Long providerId,
+            @Param("startAt") Instant startAt,
+            @Param("endAt") Instant endAt);
 }
