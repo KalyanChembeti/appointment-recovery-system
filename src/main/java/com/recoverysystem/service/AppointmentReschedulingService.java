@@ -16,6 +16,7 @@ import com.recoverysystem.repository.AuditLogRepository;
 import com.recoverysystem.repository.ProviderRepository;
 import com.recoverysystem.repository.ProviderUnavailabilityRepository;
 import com.recoverysystem.repository.RecoveryJobRepository;
+import jakarta.persistence.EntityManager;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -39,6 +40,7 @@ public class AppointmentReschedulingService {
     private final ProviderUnavailabilityRepository providerUnavailabilityRepository;
     private final RecoveryJobRepository recoveryJobRepository;
     private final AuditLogRepository auditLogRepository;
+    private final EntityManager entityManager;
 
     public AppointmentReschedulingService(
             AppointmentRepository appointmentRepository,
@@ -47,7 +49,8 @@ public class AppointmentReschedulingService {
             WaitlistReconciliationCascade waitlistReconciliationCascade,
             ProviderUnavailabilityRepository providerUnavailabilityRepository,
             RecoveryJobRepository recoveryJobRepository,
-            AuditLogRepository auditLogRepository) {
+            AuditLogRepository auditLogRepository,
+            EntityManager entityManager) {
         this.appointmentRepository = appointmentRepository;
         this.providerRepository = providerRepository;
         this.appointmentBookingEligibilityValidator = appointmentBookingEligibilityValidator;
@@ -55,6 +58,7 @@ public class AppointmentReschedulingService {
         this.providerUnavailabilityRepository = providerUnavailabilityRepository;
         this.recoveryJobRepository = recoveryJobRepository;
         this.auditLogRepository = auditLogRepository;
+        this.entityManager = entityManager;
     }
 
     @Transactional(isolation = Isolation.READ_COMMITTED)
@@ -67,6 +71,12 @@ public class AppointmentReschedulingService {
         Appointment routingAppointment = appointmentRepository.findById(oldAppointmentId)
                 .orElseThrow(() -> new AppointmentNotFoundException(oldAppointmentId));
         Long oldProviderId = routingAppointment.getProviderId();
+        Long patientId = routingAppointment.getPatientId();
+        // Detach immediately after extracting needed values -- otherwise Hibernate's identity map
+        // would return this same stale-cached instance from the later locked read below, silently
+        // bypassing post-lock revalidation under concurrent modification. See
+        // docs/ARCHITECTURE_DECISIONS.md for the full explanation.
+        entityManager.detach(routingAppointment);
 
         List<Long> providerIds = Stream.of(oldProviderId, newProviderId)
                 .distinct()
@@ -99,7 +109,7 @@ public class AppointmentReschedulingService {
                 actorUserId);
 
         Appointment newAppointment = new Appointment();
-        newAppointment.setPatientId(routingAppointment.getPatientId());
+        newAppointment.setPatientId(patientId);
         newAppointment.setProviderId(newProviderId);
         newAppointment.setAppointmentTypeId(resolvedBooking.appointmentTypeId());
         newAppointment.setStartAt(resolvedBooking.startAt());

@@ -528,3 +528,52 @@ synchronized for operational accuracy. Correctness at the transition boundary do
 depend on the unlocked discovery snapshot because every discovered row is rechecked under
 its SlotOffer lock before it is changed to EXPIRED and receives its SYSTEM
 `SlotOffer`/`EXPIRE` audit.
+
+## 24. Detach managed routing entities before later locked reads
+
+**Decision.** A routing-read entity fetched through a plain repository `findById(...)` is
+explicitly detached from the persistence context immediately after all needed scalar values
+have been copied into local variables when the same transaction later reads that entity type
+and ID through `findByIdForUpdate(...)` or another `@Lock` repository method. The locked read
+therefore returns a newly loaded managed entity whose fields reflect the row state after the
+database lock is acquired.
+
+**Reason.** Hibernate's session-level identity map returns the same cached Java object for
+repeated reads of one entity class and ID within a transaction, regardless of the repository
+method or local variable name. A later `findByIdForUpdate(...)` still acquires the PostgreSQL
+row lock, but Hibernate does not automatically refresh the fields of the instance previously
+loaded by plain `findById(...)`. Post-lock validation can consequently observe data from
+before a concurrent transaction committed. Genuine concurrent Testcontainers tests RM-01
+and RM-02 exposed this behavior; sequential tests cannot create a concurrent commit between
+the routing read and locked read.
+
+**Where implemented.** The detach rule is applied to every audited occurrence in the service
+package:
+
+- `AppointmentCancellationService.cancelAppointment(...)` detaches the routing Appointment
+  before `AppointmentRepository.findByIdForUpdate(...)` locks that Appointment.
+- `AppointmentReschedulingService.rescheduleAppointment(...)` detaches the routing
+  Appointment before `AppointmentRepository.findByIdForUpdate(...)` locks it.
+- `OfferAcceptanceService.acceptOfferTransaction(...)` detaches the routing SlotOffer before
+  `SlotOfferRepository.findAllByIdInForUpdate(...)` locks the ordered offer ID set containing
+  it; detaches the routing RecoveryJob before
+  `RecoveryJobRepository.findByIdForUpdate(...)`; detaches the routing WaitlistEntry before
+  `WaitlistEntryRepository.findByCurrentAppointmentIdAndStatusForUpdate(...)` locks ACTIVE
+  entries for the anchor Appointment in ID order; and detaches the routing old Appointment
+  before `AppointmentRepository.findByIdForUpdate(...)` locks it.
+- `ProviderBlockActivationService.activateProviderBlock(...)` detaches the routing
+  ProviderUnavailability before
+  `ProviderUnavailabilityRepository.findByIdForUpdate(...)` locks it.
+- `RecoveryWorkerService.attemptRecovery()` detaches the routing RecoveryJob before
+  `RecoveryJobRepository.findByIdForUpdate(...)` locks it.
+- `SchedulerReassignmentService.reassignSlot(...)` detaches both the routing SlotOffer and
+  routing RecoveryJob before their respective `SlotOfferRepository.findByIdForUpdate(...)`
+  and `RecoveryJobRepository.findByIdForUpdate(...)` calls.
+- `WaitlistEntryModificationService.modifyWaitlistEntry(...)` detaches the routing
+  WaitlistEntry before `WaitlistEntryRepository.findByIdForUpdate(...)` locks it.
+
+**Deferred alternative.** JPQL scalar or DTO projections for routing reads would avoid
+creating managed entities and eliminate this identity-map failure mode structurally. That
+broader repository refactor is tracked in `docs/DEFERRED_FOLLOWUPS.md`; this change uses
+explicit `EntityManager.detach(...)` calls to correct the existing workflows without
+changing their queries, lock order, validation order, or exceptions.

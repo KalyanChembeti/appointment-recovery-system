@@ -12,6 +12,7 @@ import com.recoverysystem.repository.AppointmentRepository;
 import com.recoverysystem.repository.AuditLogRepository;
 import com.recoverysystem.repository.ProviderRepository;
 import com.recoverysystem.repository.ProviderUnavailabilityRepository;
+import jakarta.persistence.EntityManager;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
@@ -27,18 +28,21 @@ public class ProviderBlockActivationService {
     private final AppointmentRepository appointmentRepository;
     private final RecoveryJobSuppressionCascade recoveryJobSuppressionCascade;
     private final AuditLogRepository auditLogRepository;
+    private final EntityManager entityManager;
 
     public ProviderBlockActivationService(
             ProviderUnavailabilityRepository providerUnavailabilityRepository,
             ProviderRepository providerRepository,
             AppointmentRepository appointmentRepository,
             RecoveryJobSuppressionCascade recoveryJobSuppressionCascade,
-            AuditLogRepository auditLogRepository) {
+            AuditLogRepository auditLogRepository,
+            EntityManager entityManager) {
         this.providerUnavailabilityRepository = providerUnavailabilityRepository;
         this.providerRepository = providerRepository;
         this.appointmentRepository = appointmentRepository;
         this.recoveryJobSuppressionCascade = recoveryJobSuppressionCascade;
         this.auditLogRepository = auditLogRepository;
+        this.entityManager = entityManager;
     }
 
     @Transactional(isolation = Isolation.READ_COMMITTED)
@@ -49,6 +53,11 @@ public class ProviderBlockActivationService {
                 .orElseThrow(() -> new ProviderUnavailabilityNotFoundException(
                         providerUnavailabilityId));
         Long routedProviderId = routingBlock.getProviderId();
+        // Detach immediately after extracting needed values -- otherwise Hibernate's identity map
+        // would return this same stale-cached instance from the later locked read below, silently
+        // bypassing post-lock revalidation under concurrent modification. See
+        // docs/ARCHITECTURE_DECISIONS.md for the full explanation.
+        entityManager.detach(routingBlock);
 
         providerRepository.findByIdForUpdate(routedProviderId)
                 .orElseThrow(() -> new ProviderNotFoundException(routedProviderId));

@@ -32,6 +32,7 @@ import com.recoverysystem.repository.ProviderUnavailabilityRepository;
 import com.recoverysystem.repository.RecoveryJobRepository;
 import com.recoverysystem.repository.SlotOfferRepository;
 import com.recoverysystem.repository.WaitlistEntryRepository;
+import jakarta.persistence.EntityManager;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
@@ -57,6 +58,7 @@ public class OfferAcceptanceService {
     private final AcceptedOfferTerminalStateResolver acceptedOfferTerminalStateResolver;
     private final SlotOfferCleanupDiscovery slotOfferCleanupDiscovery;
     private final AuditLogRepository auditLogRepository;
+    private final EntityManager entityManager;
 
     public OfferAcceptanceService(
             SlotOfferRepository slotOfferRepository,
@@ -67,7 +69,8 @@ public class OfferAcceptanceService {
             ProviderUnavailabilityRepository providerUnavailabilityRepository,
             AcceptedOfferTerminalStateResolver acceptedOfferTerminalStateResolver,
             SlotOfferCleanupDiscovery slotOfferCleanupDiscovery,
-            AuditLogRepository auditLogRepository) {
+            AuditLogRepository auditLogRepository,
+            EntityManager entityManager) {
         this.slotOfferRepository = slotOfferRepository;
         this.recoveryJobRepository = recoveryJobRepository;
         this.waitlistEntryRepository = waitlistEntryRepository;
@@ -77,6 +80,7 @@ public class OfferAcceptanceService {
         this.acceptedOfferTerminalStateResolver = acceptedOfferTerminalStateResolver;
         this.slotOfferCleanupDiscovery = slotOfferCleanupDiscovery;
         this.auditLogRepository = auditLogRepository;
+        this.entityManager = entityManager;
     }
 
     @Transactional(
@@ -88,21 +92,44 @@ public class OfferAcceptanceService {
                 .orElseThrow(() -> new SlotOfferNotFoundException(slotOfferId));
         Long recoveryJobId = routedOffer.getRecoveryJobId();
         Long waitlistEntryId = routedOffer.getWaitlistEntryId();
+        // Detach immediately after extracting needed values -- otherwise Hibernate's identity map
+        // would return this same stale-cached instance from the later locked read below, silently
+        // bypassing post-lock revalidation under concurrent modification. See
+        // docs/ARCHITECTURE_DECISIONS.md for the full explanation.
+        entityManager.detach(routedOffer);
 
         RecoveryJob routedJob = recoveryJobRepository.findById(recoveryJobId)
                 .orElseThrow(() -> new RecoveryJobNotFoundException(recoveryJobId));
         Long offeredAppointmentId = routedJob.getSourceAppointmentId();
+        // Detach immediately after extracting needed values -- otherwise Hibernate's identity map
+        // would return this same stale-cached instance from the later locked read below, silently
+        // bypassing post-lock revalidation under concurrent modification. See
+        // docs/ARCHITECTURE_DECISIONS.md for the full explanation.
+        entityManager.detach(routedJob);
 
         WaitlistEntry routedEntry = waitlistEntryRepository.findById(waitlistEntryId)
                 .orElseThrow(() -> new WaitlistEntryNotFoundException(waitlistEntryId));
         Long oldAppointmentId = routedEntry.getCurrentAppointmentId();
+        Long routedPatientId = routedEntry.getPatientId();
+        WaitlistEntryStatus routedEntryStatus = routedEntry.getStatus();
+        // Detach immediately after extracting needed values -- otherwise Hibernate's identity map
+        // would return this same stale-cached instance from the later locked read below, silently
+        // bypassing post-lock revalidation under concurrent modification. See
+        // docs/ARCHITECTURE_DECISIONS.md for the full explanation.
+        entityManager.detach(routedEntry);
 
         Appointment routedOldAppointment = appointmentRepository.findById(oldAppointmentId)
                 .orElseThrow(() -> new AppointmentNotFoundException(oldAppointmentId));
+        Long oldProviderId = routedOldAppointment.getProviderId();
+        // Detach immediately after extracting needed values -- otherwise Hibernate's identity map
+        // would return this same stale-cached instance from the later locked read below, silently
+        // bypassing post-lock revalidation under concurrent modification. See
+        // docs/ARCHITECTURE_DECISIONS.md for the full explanation.
+        entityManager.detach(routedOldAppointment);
+
         Appointment offeredAppointment = appointmentRepository.findById(offeredAppointmentId)
                 .orElseThrow(() -> new AppointmentNotFoundException(offeredAppointmentId));
 
-        Long oldProviderId = routedOldAppointment.getProviderId();
         Long offeredProviderId = offeredAppointment.getProviderId();
         Instant offeredStartAt = offeredAppointment.getStartAt();
         Instant offeredEndAt = offeredAppointment.getEndAt();
@@ -129,9 +156,9 @@ public class OfferAcceptanceService {
             throw new AppointmentNotScheduledException(
                     oldAppointmentId, oldAppointment.getStatus());
         }
-        if (!routedEntry.getPatientId().equals(patientId)) {
+        if (!routedPatientId.equals(patientId)) {
             throw new OfferAcceptanceOwnershipException(
-                    slotOfferId, patientId, routedEntry.getPatientId());
+                    slotOfferId, patientId, routedPatientId);
         }
 
         RecoveryJob recoveryJob = recoveryJobRepository.findByIdForUpdate(recoveryJobId)
@@ -147,7 +174,7 @@ public class OfferAcceptanceService {
                 .filter(entry -> entry.getId().equals(waitlistEntryId))
                 .findFirst()
                 .orElseThrow(() -> new WaitlistEntryNotActiveException(
-                        waitlistEntryId, routedEntry.getStatus()));
+                        waitlistEntryId, routedEntryStatus));
         if (!acceptedEntry.getPatientId().equals(patientId)) {
             throw new OfferAcceptanceOwnershipException(
                     slotOfferId, patientId, acceptedEntry.getPatientId());

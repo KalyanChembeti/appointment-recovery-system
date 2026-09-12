@@ -51,6 +51,24 @@ untouched but do not define an ACCEPTED invariant failure.
 whether reconciliation must discover and reject an ACCEPTED offer. If changed, specify the
 exception class and rollback behavior before modifying the shared W2/W3/W10/W11 cascade.
 
+### Replace managed routing reads with projections
+
+**Current evidence.** Genuine concurrent Testcontainers tests RM-01 and RM-02 showed that
+Hibernate's session-level identity map can return stale field values when one transaction
+first loads an entity through plain `findById(...)` for routing and later loads the same
+entity type and ID through an `@Lock` query. The SQL lock is acquired, but Hibernate may
+reuse the already-managed Java instance without refreshing it. The audited services now
+copy their needed scalar values and call `EntityManager.detach(...)` before the later locked
+read, as recorded in `docs/ARCHITECTURE_DECISIONS.md`.
+
+**Required follow-up.** Consider replacing those plain routing reads with JPQL scalar or DTO
+projections so they never add managed entities to the persistence context. Apply the change
+consistently to every routing-read/locked-read pair, preserve the existing Provider ->
+RecoveryJob -> WaitlistEntry -> SlotOffer lock hierarchy and validation order, and rerun the
+genuine concurrent race matrix. Until that refactor is complete, every new managed routing
+read followed by a lock of the same entity type and ID must detach the routing entity after
+extracting its scalar values.
+
 ## Phase 1 - Step 7 concurrent race matrix
 
 The same-Provider direct-booking race and the two-worker W12 race currently run two workflow

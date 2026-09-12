@@ -20,6 +20,7 @@ import com.recoverysystem.repository.AuditLogRepository;
 import com.recoverysystem.repository.ProviderRepository;
 import com.recoverysystem.repository.RecoveryJobRepository;
 import com.recoverysystem.repository.SlotOfferRepository;
+import jakarta.persistence.EntityManager;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -39,6 +40,7 @@ public class SchedulerReassignmentService {
     private final AcceptedOfferTerminalStateResolver acceptedOfferTerminalStateResolver;
     private final AppointmentBookingEligibilityValidator appointmentBookingEligibilityValidator;
     private final AuditLogRepository auditLogRepository;
+    private final EntityManager entityManager;
 
     public SchedulerReassignmentService(
             SlotOfferRepository slotOfferRepository,
@@ -47,7 +49,8 @@ public class SchedulerReassignmentService {
             ProviderRepository providerRepository,
             AcceptedOfferTerminalStateResolver acceptedOfferTerminalStateResolver,
             AppointmentBookingEligibilityValidator appointmentBookingEligibilityValidator,
-            AuditLogRepository auditLogRepository) {
+            AuditLogRepository auditLogRepository,
+            EntityManager entityManager) {
         this.slotOfferRepository = slotOfferRepository;
         this.recoveryJobRepository = recoveryJobRepository;
         this.appointmentRepository = appointmentRepository;
@@ -55,6 +58,7 @@ public class SchedulerReassignmentService {
         this.acceptedOfferTerminalStateResolver = acceptedOfferTerminalStateResolver;
         this.appointmentBookingEligibilityValidator = appointmentBookingEligibilityValidator;
         this.auditLogRepository = auditLogRepository;
+        this.entityManager = entityManager;
     }
 
     @Transactional(
@@ -68,10 +72,20 @@ public class SchedulerReassignmentService {
         SlotOffer routedOffer = slotOfferRepository.findById(existingSlotOfferId)
                 .orElseThrow(() -> new SlotOfferNotFoundException(existingSlotOfferId));
         Long recoveryJobId = routedOffer.getRecoveryJobId();
+        // Detach immediately after extracting needed values -- otherwise Hibernate's identity map
+        // would return this same stale-cached instance from the later locked read below, silently
+        // bypassing post-lock revalidation under concurrent modification. See
+        // docs/ARCHITECTURE_DECISIONS.md for the full explanation.
+        entityManager.detach(routedOffer);
 
         RecoveryJob routedJob = recoveryJobRepository.findById(recoveryJobId)
                 .orElseThrow(() -> new RecoveryJobNotFoundException(recoveryJobId));
         Long sourceAppointmentId = routedJob.getSourceAppointmentId();
+        // Detach immediately after extracting needed values -- otherwise Hibernate's identity map
+        // would return this same stale-cached instance from the later locked read below, silently
+        // bypassing post-lock revalidation under concurrent modification. See
+        // docs/ARCHITECTURE_DECISIONS.md for the full explanation.
+        entityManager.detach(routedJob);
         Appointment sourceAppointment = appointmentRepository.findById(sourceAppointmentId)
                 .orElseThrow(() -> new AppointmentNotFoundException(sourceAppointmentId));
         Long offeredProviderId = sourceAppointment.getProviderId();

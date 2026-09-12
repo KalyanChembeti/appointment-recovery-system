@@ -25,6 +25,7 @@ import com.recoverysystem.repository.AppointmentTypeRepository;
 import com.recoverysystem.repository.AuditLogRepository;
 import com.recoverysystem.repository.ProviderRepository;
 import com.recoverysystem.repository.WaitlistEntryRepository;
+import jakarta.persistence.EntityManager;
 import java.time.LocalDate;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -41,6 +42,7 @@ public class WaitlistEntryModificationService {
     private final AppointmentTypeRepository appointmentTypeRepository;
     private final AuditLogRepository auditLogRepository;
     private final ObjectMapper objectMapper;
+    private final EntityManager entityManager;
 
     public WaitlistEntryModificationService(
             WaitlistEntryRepository waitlistEntryRepository,
@@ -48,13 +50,15 @@ public class WaitlistEntryModificationService {
             ProviderRepository providerRepository,
             AppointmentTypeRepository appointmentTypeRepository,
             AuditLogRepository auditLogRepository,
-            ObjectMapper objectMapper) {
+            ObjectMapper objectMapper,
+            EntityManager entityManager) {
         this.waitlistEntryRepository = waitlistEntryRepository;
         this.appointmentRepository = appointmentRepository;
         this.providerRepository = providerRepository;
         this.appointmentTypeRepository = appointmentTypeRepository;
         this.auditLogRepository = auditLogRepository;
         this.objectMapper = objectMapper;
+        this.entityManager = entityManager;
     }
 
     @Transactional(isolation = Isolation.READ_COMMITTED)
@@ -68,6 +72,11 @@ public class WaitlistEntryModificationService {
         WaitlistEntry routingEntry = waitlistEntryRepository.findById(waitlistEntryId)
                 .orElseThrow(() -> new WaitlistEntryNotFoundException(waitlistEntryId));
         Long routedAppointmentId = routingEntry.getCurrentAppointmentId();
+        // Detach immediately after extracting needed values -- otherwise Hibernate's identity map
+        // would return this same stale-cached instance from the later locked read below, silently
+        // bypassing post-lock revalidation under concurrent modification. See
+        // docs/ARCHITECTURE_DECISIONS.md for the full explanation.
+        entityManager.detach(routingEntry);
 
         Appointment appointment = appointmentRepository.findByIdForUpdate(routedAppointmentId)
                 .orElseThrow(() -> new AppointmentNotFoundException(routedAppointmentId));

@@ -21,6 +21,7 @@ import com.recoverysystem.repository.RecoveryJobRepository;
 import com.recoverysystem.repository.SchedulingPolicyRepository;
 import com.recoverysystem.repository.SlotOfferRepository;
 import com.recoverysystem.repository.WaitlistEntryRepository;
+import jakarta.persistence.EntityManager;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
@@ -48,6 +49,7 @@ public class RecoveryWorkerService {
     private final RecoveryJobEligibilityClassifier eligibilityClassifier;
     private final RecoveryCandidateSelector candidateSelector;
     private final RecoveryCandidateRevalidator candidateRevalidator;
+    private final EntityManager entityManager;
     private final ZoneId clinicTimeZone;
 
     public RecoveryWorkerService(
@@ -61,6 +63,7 @@ public class RecoveryWorkerService {
             RecoveryJobEligibilityClassifier eligibilityClassifier,
             RecoveryCandidateSelector candidateSelector,
             RecoveryCandidateRevalidator candidateRevalidator,
+            EntityManager entityManager,
             @Value("${recovery-system.clinic.timezone}") String clinicTimeZone) {
         this.recoveryJobRepository = recoveryJobRepository;
         this.appointmentRepository = appointmentRepository;
@@ -72,6 +75,7 @@ public class RecoveryWorkerService {
         this.eligibilityClassifier = eligibilityClassifier;
         this.candidateSelector = candidateSelector;
         this.candidateRevalidator = candidateRevalidator;
+        this.entityManager = entityManager;
         this.clinicTimeZone = ZoneId.of(clinicTimeZone);
     }
 
@@ -87,6 +91,11 @@ public class RecoveryWorkerService {
         RecoveryJob routingJob = recoveryJobRepository.findById(jobId)
                 .orElseThrow(() -> new RecoveryJobNotFoundException(jobId));
         Long sourceAppointmentId = routingJob.getSourceAppointmentId();
+        // Detach immediately after extracting needed values -- otherwise Hibernate's identity map
+        // would return this same stale-cached instance from the later locked read below, silently
+        // bypassing post-lock revalidation under concurrent modification. See
+        // docs/ARCHITECTURE_DECISIONS.md for the full explanation.
+        entityManager.detach(routingJob);
         Appointment sourceAppointment = appointmentRepository.findById(sourceAppointmentId)
                 .orElseThrow(() -> new AppointmentNotFoundException(sourceAppointmentId));
         Long releasedProviderId = sourceAppointment.getProviderId();
