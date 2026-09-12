@@ -28,11 +28,17 @@ import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.mock.mockito.SpyBean;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -67,7 +73,7 @@ class RecoveryWorkerServiceTest {
     @Autowired
     private RecoveryWorkerService recoveryWorkerService;
 
-    @Autowired
+    @SpyBean
     private RecoveryJobRepository recoveryJobRepository;
 
     @Autowired
@@ -81,6 +87,7 @@ class RecoveryWorkerServiceTest {
 
     @BeforeEach
     void clearWorkflowData() {
+        org.mockito.Mockito.reset(recoveryJobRepository);
         jdbcTemplate.execute("TRUNCATE TABLE audit_log, slot_offer, recovery_job, "
                 + "waitlist_entry, appointment, provider_schedule, provider_unavailability, "
                 + "provider, appointment_type, specialty, users RESTART IDENTITY CASCADE");
@@ -276,6 +283,86 @@ class RecoveryWorkerServiceTest {
         assertEquals(
                 eligibleCandidate.waitlistEntryId(),
                 eligibleJobOffers.getFirst().getWaitlistEntryId());
+    }
+
+    @Test
+    void offeredSlotCreatedAfterRoutingReturnsOfferAlreadyExistsWithoutChanges()
+            throws NoSuchMethodException {
+        JobFixture fixture = createJob(futureStart(), ORDERING_TIME);
+        Candidate candidate = insertCandidate(
+                fixture, ORDERING_TIME, TimeOfDayPreference.ANY, null);
+        Long existingOfferId = insertSlotOffer(
+                fixture.recoveryJobId(),
+                candidate.waitlistEntryId(),
+                SlotOfferStatus.OFFERED);
+        long offerCountBefore = slotOfferRepository.count();
+        long auditCountBefore = auditLogRepository.count();
+
+        org.mockito.Mockito.doReturn(List.of(fixture.recoveryJobId()))
+                .when(recoveryJobRepository)
+                .findOldestOpenJobIdsWithoutOfferedOffer(
+                        org.mockito.ArgumentMatchers.any(Pageable.class));
+
+        RecoveryWorkerOutcome outcome = recoveryWorkerService.attemptRecovery();
+
+        assertEquals(RecoveryWorkerOutcome.OFFER_ALREADY_EXISTS_FOR_JOB, outcome);
+        assertEquals(RecoveryJobStatus.OPEN, findJob(fixture.recoveryJobId()).getStatus());
+        assertEquals(offerCountBefore, slotOfferRepository.count());
+        assertEquals(auditCountBefore, auditLogRepository.count());
+        assertEquals(
+                SlotOfferStatus.OFFERED,
+                slotOfferRepository.findById(existingOfferId).orElseThrow().getStatus());
+        assertNull(SlotOfferRepository.class
+                .getMethod(
+                        "existsByRecoveryJobIdAndStatus",
+                        Long.class,
+                        SlotOfferStatus.class)
+                .getAnnotation(Lock.class));
+    }
+
+    @Test
+    void concurrentWorkersCreateOneOfferAndReturnHandledRaceOutcome() throws Exception {
+        JobFixture fixture = createJob(futureStart(), ORDERING_TIME);
+        insertCandidate(fixture, ORDERING_TIME, TimeOfDayPreference.ANY, null);
+        CountDownLatch ready = new CountDownLatch(2);
+        CountDownLatch start = new CountDownLatch(1);
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+
+        try {
+            Future<RecoveryWorkerOutcome> firstAttempt = executor.submit(
+                    () -> attemptRecoveryAfterSignal(ready, start));
+            Future<RecoveryWorkerOutcome> secondAttempt = executor.submit(
+                    () -> attemptRecoveryAfterSignal(ready, start));
+
+            assertTrue(ready.await(10, TimeUnit.SECONDS), "Worker threads did not become ready");
+            start.countDown();
+
+            List<RecoveryWorkerOutcome> outcomes = List.of(
+                    firstAttempt.get(20, TimeUnit.SECONDS),
+                    secondAttempt.get(20, TimeUnit.SECONDS));
+            assertEquals(1, outcomes.stream()
+                    .filter(RecoveryWorkerOutcome.OFFER_CREATED::equals)
+                    .count());
+            assertEquals(1, outcomes.stream()
+                    .filter(RecoveryWorkerOutcome.OFFER_ALREADY_EXISTS_FOR_JOB::equals)
+                    .count());
+            outcomes.forEach(outcome -> assertTrue(
+                    outcome == RecoveryWorkerOutcome.OFFER_CREATED
+                            || outcome == RecoveryWorkerOutcome.OFFER_ALREADY_EXISTS_FOR_JOB,
+                    () -> "Unexpected concurrent worker outcome: " + outcome));
+            assertEquals(1, slotOfferRepository.count());
+        } finally {
+            executor.shutdownNow();
+        }
+    }
+
+    private RecoveryWorkerOutcome attemptRecoveryAfterSignal(
+            CountDownLatch ready, CountDownLatch start) throws InterruptedException {
+        ready.countDown();
+        if (!start.await(10, TimeUnit.SECONDS)) {
+            throw new AssertionError("Concurrent worker start signal timed out");
+        }
+        return recoveryWorkerService.attemptRecovery();
     }
 
     private JobFixture createJob(Instant startAt, Instant createdAt) {

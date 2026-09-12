@@ -71,6 +71,9 @@ public interface SlotOfferRepository extends JpaRepository<SlotOffer, Long> {
             @Param("recoveryJobId") Long recoveryJobId,
             @Param("patientId") Long patientId);
 
+    boolean existsByRecoveryJobIdAndStatus(
+            Long recoveryJobId, SlotOfferStatus status);
+
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT s FROM SlotOffer s WHERE s.waitlistEntryId = :waitlistEntryId "
             + "AND s.status = :status ORDER BY s.id ASC")

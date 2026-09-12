@@ -3,6 +3,7 @@ package com.recoverysystem.domain.enums;
 public enum RecoveryWorkerOutcome {
     NO_OPEN_JOBS,
     OFFER_CREATED,
+    OFFER_ALREADY_EXISTS_FOR_JOB,
     RELEASED_INTERVAL_OCCUPIED,
     PROVIDER_ACTIVELY_BLOCKED,
     PROVIDER_PENDING_BLOCKED,

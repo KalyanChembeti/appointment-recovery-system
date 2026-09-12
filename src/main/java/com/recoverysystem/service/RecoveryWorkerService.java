@@ -101,6 +101,10 @@ public class RecoveryWorkerService {
         if (recoveryJob.getStatus() != RecoveryJobStatus.OPEN) {
             return RecoveryWorkerOutcome.NO_OPEN_JOBS;
         }
+        if (slotOfferRepository.existsByRecoveryJobIdAndStatus(
+                jobId, SlotOfferStatus.OFFERED)) {
+            return RecoveryWorkerOutcome.OFFER_ALREADY_EXISTS_FOR_JOB;
+        }
 
         boolean jobIsEligible = eligibilityClassifier.classifyAndHandle(
                 recoveryJob,
