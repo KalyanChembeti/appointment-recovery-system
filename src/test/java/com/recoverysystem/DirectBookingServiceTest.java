@@ -33,16 +33,13 @@ import com.recoverysystem.repository.ProviderUnavailabilityRepository;
 import com.recoverysystem.repository.SpecialtyRepository;
 import com.recoverysystem.repository.UserRepository;
 import com.recoverysystem.service.DirectBookingService;
+import com.recoverysystem.support.ConcurrentRaceHarness;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.ZoneId;
 import java.util.List;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -305,31 +302,19 @@ class DirectBookingServiceTest {
         LocalDate date = LocalDate.of(2032, 10, 14);
         BookingFixture fixture = createFixture(date);
         Instant startAt = atClinicTime(date, 12, 0);
-        CountDownLatch ready = new CountDownLatch(2);
-        CountDownLatch start = new CountDownLatch(1);
-        ExecutorService executor = Executors.newFixedThreadPool(2);
+        ConcurrentRaceHarness.RaceResult<Object> raceResult = ConcurrentRaceHarness.race(
+                () -> attemptBooking(fixture.firstPatientId(), fixture, startAt),
+                () -> attemptBooking(fixture.secondPatientId(), fixture, startAt),
+                Duration.ofSeconds(10),
+                Duration.ofSeconds(20));
 
-        try {
-            Future<Object> firstAttempt = executor.submit(() -> attemptBookingAfterSignal(
-                    fixture.firstPatientId(), fixture, startAt, ready, start));
-            Future<Object> secondAttempt = executor.submit(() -> attemptBookingAfterSignal(
-                    fixture.secondPatientId(), fixture, startAt, ready, start));
-
-            assertTrue(ready.await(10, TimeUnit.SECONDS), "Booking threads did not become ready");
-            start.countDown();
-
-            List<Object> outcomes = List.of(
-                    firstAttempt.get(20, TimeUnit.SECONDS),
-                    secondAttempt.get(20, TimeUnit.SECONDS));
-            assertEquals(1, outcomes.stream().filter(Appointment.class::isInstance).count());
-            assertEquals(1, outcomes.stream().filter(ProviderDoubleBookedException.class::isInstance).count());
-            outcomes.forEach(outcome -> assertTrue(
-                    outcome instanceof Appointment || outcome instanceof ProviderDoubleBookedException,
-                    () -> "Unexpected concurrent booking outcome: " + outcome));
-            assertEquals(1, appointmentCountForProvider(fixture.providerId()));
-        } finally {
-            executor.shutdownNow();
-        }
+        List<Object> outcomes = raceResult.asList();
+        assertEquals(1, outcomes.stream().filter(Appointment.class::isInstance).count());
+        assertEquals(1, outcomes.stream().filter(ProviderDoubleBookedException.class::isInstance).count());
+        outcomes.forEach(outcome -> assertTrue(
+                outcome instanceof Appointment || outcome instanceof ProviderDoubleBookedException,
+                () -> "Unexpected concurrent booking outcome: " + outcome));
+        assertEquals(1, appointmentCountForProvider(fixture.providerId()));
     }
 
     private void assertBlockingUnavailabilityRejectsBooking(ProviderUnavailabilityStatus status) {
@@ -352,16 +337,10 @@ class DirectBookingServiceTest {
         assertEquals(0, appointmentCountForProvider(fixture.providerId()));
     }
 
-    private Object attemptBookingAfterSignal(
+    private Object attemptBooking(
             Long patientId,
             BookingFixture fixture,
-            Instant startAt,
-            CountDownLatch ready,
-            CountDownLatch start) throws InterruptedException {
-        ready.countDown();
-        if (!start.await(10, TimeUnit.SECONDS)) {
-            return new AssertionError("Concurrent booking start signal timed out");
-        }
+            Instant startAt) {
         try {
             return directBookingService.bookAppointment(
                     patientId,

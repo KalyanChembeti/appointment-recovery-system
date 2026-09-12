@@ -21,18 +21,15 @@ import com.recoverysystem.repository.AuditLogRepository;
 import com.recoverysystem.repository.RecoveryJobRepository;
 import com.recoverysystem.repository.SlotOfferRepository;
 import com.recoverysystem.service.RecoveryWorkerService;
+import com.recoverysystem.support.ConcurrentRaceHarness;
 import java.sql.Date;
 import java.sql.Timestamp;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -324,45 +321,25 @@ class RecoveryWorkerServiceTest {
     void concurrentWorkersCreateOneOfferAndReturnHandledRaceOutcome() throws Exception {
         JobFixture fixture = createJob(futureStart(), ORDERING_TIME);
         insertCandidate(fixture, ORDERING_TIME, TimeOfDayPreference.ANY, null);
-        CountDownLatch ready = new CountDownLatch(2);
-        CountDownLatch start = new CountDownLatch(1);
-        ExecutorService executor = Executors.newFixedThreadPool(2);
+        ConcurrentRaceHarness.RaceResult<RecoveryWorkerOutcome> raceResult =
+                ConcurrentRaceHarness.race(
+                        recoveryWorkerService::attemptRecovery,
+                        recoveryWorkerService::attemptRecovery,
+                        Duration.ofSeconds(10),
+                        Duration.ofSeconds(20));
 
-        try {
-            Future<RecoveryWorkerOutcome> firstAttempt = executor.submit(
-                    () -> attemptRecoveryAfterSignal(ready, start));
-            Future<RecoveryWorkerOutcome> secondAttempt = executor.submit(
-                    () -> attemptRecoveryAfterSignal(ready, start));
-
-            assertTrue(ready.await(10, TimeUnit.SECONDS), "Worker threads did not become ready");
-            start.countDown();
-
-            List<RecoveryWorkerOutcome> outcomes = List.of(
-                    firstAttempt.get(20, TimeUnit.SECONDS),
-                    secondAttempt.get(20, TimeUnit.SECONDS));
-            assertEquals(1, outcomes.stream()
-                    .filter(RecoveryWorkerOutcome.OFFER_CREATED::equals)
-                    .count());
-            assertEquals(1, outcomes.stream()
-                    .filter(RecoveryWorkerOutcome.OFFER_ALREADY_EXISTS_FOR_JOB::equals)
-                    .count());
-            outcomes.forEach(outcome -> assertTrue(
-                    outcome == RecoveryWorkerOutcome.OFFER_CREATED
-                            || outcome == RecoveryWorkerOutcome.OFFER_ALREADY_EXISTS_FOR_JOB,
-                    () -> "Unexpected concurrent worker outcome: " + outcome));
-            assertEquals(1, slotOfferRepository.count());
-        } finally {
-            executor.shutdownNow();
-        }
-    }
-
-    private RecoveryWorkerOutcome attemptRecoveryAfterSignal(
-            CountDownLatch ready, CountDownLatch start) throws InterruptedException {
-        ready.countDown();
-        if (!start.await(10, TimeUnit.SECONDS)) {
-            throw new AssertionError("Concurrent worker start signal timed out");
-        }
-        return recoveryWorkerService.attemptRecovery();
+        List<RecoveryWorkerOutcome> outcomes = raceResult.asList();
+        assertEquals(1, outcomes.stream()
+                .filter(RecoveryWorkerOutcome.OFFER_CREATED::equals)
+                .count());
+        assertEquals(1, outcomes.stream()
+                .filter(RecoveryWorkerOutcome.OFFER_ALREADY_EXISTS_FOR_JOB::equals)
+                .count());
+        outcomes.forEach(outcome -> assertTrue(
+                outcome == RecoveryWorkerOutcome.OFFER_CREATED
+                        || outcome == RecoveryWorkerOutcome.OFFER_ALREADY_EXISTS_FOR_JOB,
+                () -> "Unexpected concurrent worker outcome: " + outcome));
+        assertEquals(1, slotOfferRepository.count());
     }
 
     private JobFixture createJob(Instant startAt, Instant createdAt) {
