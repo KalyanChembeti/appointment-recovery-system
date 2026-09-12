@@ -7,16 +7,16 @@ On 2026-09-11, from the current working tree based on commit
 
 ```text
 BUILD SUCCESS
-Tests run: 258, Failures: 0, Errors: 0, Skipped: 0
-Total time: 2:05 min
+Tests run: 265, Failures: 0, Errors: 0, Skipped: 0
+Total time: 2:14 min
 ```
 
-The verification environment used Maven 3.9.9 and Microsoft OpenJDK 21.0.12.1. All 25
+The verification environment used Maven 3.9.9 and Microsoft OpenJDK 21.0.12.1. All 26
 test classes use Testcontainers with the `postgres:15` image. The fresh containers reported
 PostgreSQL 15.19. No test uses H2 or another in-memory database.
 
 `SchemaMigrationTest` deliberately does not start the Spring context; it runs Flyway
-programmatically and uses JDBC metadata/queries. The other 24 classes use
+programmatically and uses JDBC metadata/queries. The other 25 classes use
 `@SpringBootTest`, dynamic datasource properties, and PostgreSQL Testcontainers. Four
 classes are marked `@Transactional` at class level and run each test in a rollback-bound
 test transaction: `ReferenceEntityMappingTest`, `RecoveryJobEligibilityClassifierTest`,
@@ -59,7 +59,8 @@ sequential and are not evidence that simultaneous interleavings are safe.
 | `SchedulerReassignmentServiceTest` | 14 | W13B scheduler reassignment | type selection, eligibility, complete offer terminal matrix, job state, rollback, exact audits, untouched waitlist entry | Sequential committed Spring integration with delta-based audit assertions; Testcontainers PostgreSQL 15 |
 | `ProviderBlockCreationServiceTest` | 9 | W14 request/creation | PENDING/ACTIVE choice and suppression cascade | Sequential committed Spring integration; Testcontainers PostgreSQL 15 |
 | `ProviderBlockActivationServiceTest` | 7 | W14 activation | conflict recheck, transition, suppression, actors, rejections | Sequential committed Spring integration; Testcontainers PostgreSQL 15 |
-| **Total** | **258** |  | **0 failures, 0 errors, 0 skipped** |  |
+| `ProviderBlockCancellationServiceTest` | 7 | W14 pending cancellation | PENDING success, ACTIVE/CANCELLED/missing rejection, optional reason, both actor modes, forbidden-import proof | Sequential committed Spring integration with source-structure assertion; Testcontainers PostgreSQL 15 |
+| **Total** | **265** |  | **0 failures, 0 errors, 0 skipped** |  |
 
 ## Full test method result list
 
@@ -193,6 +194,16 @@ a method name documents the scenario that was executed, not a broader concurrenc
 - PASS `alreadyActiveBlockIsRejectedWithoutChanges`
 - PASS `cancelledBlockIsRejectedAsNotPendingWithoutChanges`
 - PASS `actorAttributionAppliesToActivationAndCascadeAudits`
+
+### `ProviderBlockCancellationServiceTest` - 7 passed
+
+- PASS `activeBlockCannotBeCancelled`
+- PASS `nullAndNonNullActorsCreateSystemAndUserAudits`
+- PASS `serviceDoesNotImportProviderRecoveryJobOrSlotOfferRepositories`
+- PASS `nonexistentBlockIsRejected`
+- PASS `pendingBlockIsCancelledWithReasonAndOneUserAudit`
+- PASS `cancelledBlockCannotBeCancelledAgain`
+- PASS `nullCancellationReasonIsAllowed`
 
 ### `ProviderBlockCreationServiceTest` - 9 passed
 
@@ -424,7 +435,7 @@ The current PostgreSQL suite validates these concrete areas:
 - `no_patient_overlap`, `no_provider_overlap`, adjacent half-open intervals,
   `one_offered_per_recovery`, unique recovery source, enum-like checks, audit actor checks,
   and reference foreign keys/uniqueness work in PostgreSQL.
-- W1-W13B and W14 request/activation sequential success, rejection, state, audit, and
+- W1-W13B and W14 request/activation/pending-cancellation success, rejection, state, audit, and
   rollback branches listed by method above pass.
 - W4's stale-offer and provider-occupied `noRollbackFor` branches commit the intended rows;
   its patient-overlap branch rolls the main transaction back and then commits only the
@@ -438,8 +449,9 @@ The current PostgreSQL suite validates these concrete areas:
   `OFFER_ALREADY_EXISTS_FOR_JOB`, and one committed SlotOffer.
 
 W13B is validated sequentially for its complete status/validation/constraint branches and
-transaction outcomes. The suite does not validate W14 `PENDING -> CANCELLED` because no
-cancellation operation exists.
+transaction outcomes. W14 pending cancellation is validated sequentially for PENDING
+success, ACTIVE and CANCELLED rejection, missing ID, nullable reason, both actor modes, and
+the absence of Provider, RecoveryJob, and SlotOffer repository imports.
 
 ## Still requires true concurrent race validation
 

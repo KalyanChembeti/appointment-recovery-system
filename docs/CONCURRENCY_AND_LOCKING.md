@@ -121,6 +121,7 @@ a new row rather than an acquired row lock.
 | W14 Block request, conflicts | Provider `findByIdForUpdate` -> PENDING ProviderUnavailability insert | Scheduled conflicts are queried while Provider is held; no job/offer mutation occurs |
 | W14 Block request, no conflicts | Provider `findByIdForUpdate` -> ACTIVE ProviderUnavailability insert -> overlapping OPEN RecoveryJobs `findOpenOverlappingByProviderForUpdate` ascending -> their OFFERED SlotOffers `findOfferedByRecoveryJobIdsForUpdate` ascending | Scheduled conflict discovery precedes block insert; suppression children are found while Provider is held |
 | W14 Block activation | routing ProviderUnavailability -> Provider `findByIdForUpdate` -> ProviderUnavailability `findByIdForUpdate` -> overlapping OPEN RecoveryJobs ascending -> their OFFERED SlotOffers ascending | PENDING status and absence of scheduled conflicts are rechecked before activation and suppression |
+| W14 Pending-block cancellation | ProviderUnavailability `findByIdForUpdate` only | PENDING status is checked after the block lock; Provider, RecoveryJob, and SlotOffer are neither read nor locked |
 
 ## Routing reads versus locked reads
 
@@ -196,7 +197,8 @@ capacity take Provider before their mutable child rows:
 - W4 locks old and offered Providers before block/occupancy checks and acceptance.
 - W12 locks the released Provider before classifying the job or selecting a candidate.
 - W14 locks Provider before conflict discovery, request creation, activation, and job
-  suppression.
+  suppression. Pending-block cancellation deliberately locks only ProviderUnavailability
+  because it never inspects Provider or changes RecoveryJob/SlotOffer state.
 
 If a booking and block operation target the same Provider, the Provider row is the intended
 serialization point. The waiter runs block/availability/conflict queries only after the
@@ -288,6 +290,27 @@ After eligibility validation, the Appointment insert is flushed before offer/job
 CANCELLED with `SlotOffer`/`CANCEL`/`STAFF_OVERRIDE`, changes the job to FILLED with
 `RecoveryJob`/`FILLED`/null, inserts the replacement Appointment with
 `Appointment`/`CREATE`/null, and attributes all three audits to USER/the supplied actor ID.
+
+## W14 pending-block cancellation boundary
+
+`ProviderBlockCancellationService.cancelPendingBlock(...)` directly calls
+`ProviderUnavailabilityRepository.findByIdForUpdate(providerUnavailabilityId)`. This is its
+only business-row lock. It does not perform an unlocked Provider routing read and does not
+call `ProviderRepository`, `RecoveryJobRepository`, or `SlotOfferRepository`.
+
+The locked status is authoritative. PENDING changes to CANCELLED and gets a
+microsecond-truncated `cancelledAt`; ACTIVE and CANCELLED throw
+`ProviderBlockNotPendingException`; a missing row throws
+`ProviderUnavailabilityNotFoundException`. Rejections roll back without an audit. Success
+writes exactly one `ProviderUnavailability`/`CANCEL` audit whose reason is the nullable
+`cancellationReason` argument. Actor attribution is SYSTEM/null for a null actor ID and
+USER/the supplied ID otherwise. The block's original `reason` remains unchanged.
+
+Activation and cancellation can both lock the same ProviderUnavailability row without a
+lock cycle. Activation takes Provider before it waits for the block; cancellation never
+requests Provider after holding the block. Whichever operation obtains the block lock first
+can complete its PENDING transition, and the waiter then sees ACTIVE or CANCELLED and throws
+`ProviderBlockNotPendingException`.
 
 ## W12 stale-candidate behavior
 
@@ -387,6 +410,11 @@ deadlock/timeout assertion.
     `SlotOfferNotOfferedException` for CANCELLED while the W13B Appointment and FILLED job
     remain committed.
 
-W13B now has sequential transaction coverage but no true two-thread test. The missing W14
-PENDING-to-CANCELLED transition likewise has no current operation to race against
-activation.
+18. **W14 activation versus cancellation of the same PENDING block.** Prove exactly one
+    transition wins the ProviderUnavailability lock. If activation wins, cancellation must
+    throw `ProviderBlockNotPendingException` with ACTIVE; if cancellation wins, activation
+    must throw the same exception with CANCELLED. Assert only the winner's audit and verify
+    that cancellation never changes a RecoveryJob or SlotOffer.
+
+W13B and W14 pending-block cancellation now have sequential transaction coverage but no
+true two-thread tests for their listed interleavings.

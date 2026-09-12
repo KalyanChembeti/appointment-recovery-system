@@ -180,11 +180,15 @@ retains history without affecting capacity.
 `RecoveryJobEligibilityClassifier` handles ACTIVE and PENDING separately.
 `ProviderBlockCreationService` chooses PENDING when scheduled conflicts exist and ACTIVE
 otherwise. `ProviderBlockActivationService` implements PENDING to ACTIVE.
+`ProviderBlockCancellationService` implements PENDING to CANCELLED, sets `cancelledAt`,
+preserves the block's original reason, and writes one `ProviderUnavailability`/`CANCEL`
+audit whose reason is the optional cancellation explanation.
 
 **Risks/invariants protected.** New appointments cannot slip into an interval under
-resolution. Recovery jobs are not prematurely terminal under PENDING. The older design also
-requires PENDING to CANCELLED, but no current service implements that transition; it is a
-documented follow-up rather than a current guarantee.
+resolution. Recovery jobs are not prematurely terminal under PENDING. Cancellation retains
+the block row for history and makes it stop blocking future destination bookings. ACTIVE
+blocks cannot be cancelled because no mechanism reverses their SUPPRESSED RecoveryJobs or
+CANCELLED SlotOffers.
 
 ## 10. Enforce scheduled patient and provider overlap in PostgreSQL
 
@@ -467,3 +471,31 @@ for provider and patient overlap. `PatientDoubleBookedException`,
 normal rollback rule, so the offer remains OFFERED and the job remains OPEN. A stale OFFERED
 offer is the one exception: it changes to EXPIRED, receives a SYSTEM
 `SlotOffer`/`EXPIRE`/null audit, and commits before `OfferExpiredException` is returned.
+
+## 22. Cancel only PENDING provider blocks and lock only the block row
+
+**Decision.** `ProviderBlockCancellationService.cancelPendingBlock(...)` locks the target
+ProviderUnavailability directly and permits only PENDING to CANCELLED. It sets a
+microsecond-truncated `cancelledAt`, preserves the original block `reason`, and writes one
+`ProviderUnavailability`/`CANCEL` audit. ACTIVE and already CANCELLED blocks both throw
+`ProviderBlockNotPendingException`; a missing row throws
+`ProviderUnavailabilityNotFoundException`.
+
+**Reason.** A PENDING block has not suppressed RecoveryJobs or cancelled SlotOffers. Its
+cancellation is therefore local to one ProviderUnavailability row. Locking Provider would
+add contention with bookings without protecting another state mutation. Cancelling an
+ACTIVE block would require an undefined reversal of terminal SUPPRESSED and CANCELLED
+states, so that transition is deliberately unsupported.
+
+**Where implemented.** The service uses only
+`ProviderUnavailabilityRepository.findByIdForUpdate(...)` and `AuditLogRepository`. It does
+not import ProviderRepository, RecoveryJobRepository, or SlotOfferRepository. A null actor
+produces SYSTEM/null audit attribution; a supplied actor produces USER/the supplied ID.
+This actor rule is an analogy to existing workflows because the added cancellation operation
+has no original locked actor specification.
+
+**Risks/invariants protected.** Competing activation and cancellation operations serialize
+on the ProviderUnavailability row. Cancellation never changes recovery or offer state and
+cannot silently overwrite ACTIVE or CANCELLED. The current tests prove each sequential
+state outcome; the simultaneous activation-versus-cancellation interleaving still requires
+a true two-thread test.

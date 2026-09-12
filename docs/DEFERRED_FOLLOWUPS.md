@@ -22,17 +22,21 @@ ID or verify the RECEPTIONIST role.
 derive `actorUserId` from the authenticated server-side session, enforce the receptionist
 role, and add tests proving the patient and actor cannot be forged through request data.
 
-### Add the missing provider-block cancellation transition
+### Implement ACTIVE block cancellation
 
-**Current evidence.** `ProviderUnavailabilityStatus` and the V2 database check include
-CANCELLED, and the older lifecycle requires `PENDING -> CANCELLED` as an update that retains
-history. `ProviderBlockActivationService` only implements `PENDING -> ACTIVE`; no service
-sets `cancelledAt` or writes a cancellation audit.
+**Current evidence.** `ProviderBlockCancellationService.cancelPendingBlock(...)` only
+supports PENDING -> CANCELLED. Cancelling an ACTIVE ProviderUnavailability is explicitly
+out of scope for that implementation: an ACTIVE block has already run
+`RecoveryJobSuppressionCascade` (RecoveryJobs SUPPRESSED, SlotOffers CANCELLED), and no
+design document anywhere in this project defines a mechanism for reversing that cascade.
+SUPPRESSED is treated as a terminal RecoveryJob state everywhere else in this codebase.
 
-**Required follow-up.** Define and implement the cancellation method, required actor,
-`Provider -> ProviderUnavailability` lock order, status revalidation, exact audit action and
-reason, and tests for PENDING success plus ACTIVE/CANCELLED/missing rejection. Do not delete
-the row.
+**Required follow-up.** Decide whether ACTIVE block cancellation should ever un-suppress
+affected RecoveryJobs/SlotOffers, or whether it should only flip the block's own status
+without touching them (leaving suppressed capacity to be recovered independently, e.g. by
+the source appointment being re-cancelled through the normal flow). Specify this decision
+explicitly before implementing -- do not infer it from the PENDING case, which had no
+cascade to consider in the first place.
 
 ### Resolve reconciliation behavior for already-resolved offers
 

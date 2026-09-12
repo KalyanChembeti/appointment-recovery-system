@@ -3,9 +3,8 @@
 This guide maps the numbered workflows to the current Java and PostgreSQL implementation.
 Every state, exception, audit string, and lock sequence below comes from the current source.
 W13A mechanics are implemented and tested through the reusable W4 entry point, but its
-authentication/authorization boundary is absent. W13B is implemented and tested as a
-transaction service. The W14 `PENDING -> CANCELLED` transition is absent and is labeled
-accordingly.
+authentication/authorization boundary is absent. W13B and the W14 request, activation, and
+pending-block cancellation operations are implemented and tested as transaction services.
 
 ## Workflow index
 
@@ -25,7 +24,7 @@ accordingly.
 | W12 | Recovery worker offer generation | `RecoveryWorkerService.attemptRecovery()` | `RecoveryWorkerServiceTest`, `RecoveryJobEligibilityClassifierTest`, `RecoveryCandidateSelectorTest`, `RecoveryCandidateRevalidatorTest` |
 | W13A | Scheduler accepts on behalf | Reuses `OfferAcceptanceOrchestrator.acceptOffer(...)`; no separate entry point | `OfferAcceptanceOnBehalfTest` |
 | W13B | Scheduler reassigns to another patient | `SchedulerReassignmentService.reassignSlot(...)` | `SchedulerReassignmentServiceTest` |
-| W14 | Provider-block request and activation | `ProviderBlockCreationService.createProviderBlock(...)`; `ProviderBlockActivationService.activateProviderBlock(...)` | `ProviderBlockCreationServiceTest`, `ProviderBlockActivationServiceTest` |
+| W14 | Provider-block request, activation, and pending cancellation | `ProviderBlockCreationService.createProviderBlock(...)`; `ProviderBlockActivationService.activateProviderBlock(...)`; `ProviderBlockCancellationService.cancelPendingBlock(...)` | `ProviderBlockCreationServiceTest`, `ProviderBlockActivationServiceTest`, `ProviderBlockCancellationServiceTest` |
 
 ## Shared transaction mechanisms
 
@@ -932,7 +931,7 @@ states, committed aggressive expiry, non-OPEN RecoveryJob, missing offer, patien
 Provider exclusion-constraint conflicts with complete rollback, the exact three success
 audits and actor attribution, and unchanged original WaitlistEntry state.
 
-## W14 - Provider-block request and activation
+## W14 - Provider-block request, activation, and pending cancellation
 
 ### W14 request/creation
 
@@ -1016,10 +1015,46 @@ changes and audits stated in the creation no-conflict branch:
 `SlotOffer`/`CANCEL`/`RECOVERY_JOB_SUPPRESSED`. The block receives
 `ProviderUnavailability`/`ACTIVATE`/null. Every row uses SYSTEM/null or USER/supplied ID.
 
-**Missing transition.** The enum and migration permit CANCELLED, and the older design calls
-for PENDING to CANCELLED by update rather than delete. No current service implements that
-transition, sets `cancelledAt`, defines its audit action/reason, or tests it.
-
 **Tests.** `ProviderBlockActivationServiceTest` has 7 tests for simple activation,
 activation with job/offer cascade, unresolved conflict, missing block, ACTIVE and CANCELLED
 rejection, and actor propagation across the cascade.
+
+### Pending-block cancellation
+
+**Implementation and lock.**
+`ProviderBlockCancellationService.cancelPendingBlock(Long providerUnavailabilityId, String
+cancellationReason, Long actorUserId)` runs under `READ_COMMITTED`. It directly locks the
+target block with
+`ProviderUnavailabilityRepository.findByIdForUpdate(providerUnavailabilityId)`, which uses
+`PESSIMISTIC_WRITE`. Absence throws `ProviderUnavailabilityNotFoundException`.
+
+This operation deliberately does not read or lock Provider. It changes only the existing
+ProviderUnavailability row, and a PENDING block has not suppressed a RecoveryJob or
+cancelled a SlotOffer. The service therefore does not reference `ProviderRepository`,
+`RecoveryJobRepository`, or `SlotOfferRepository` and performs no recovery or offer
+transition.
+
+**Complete status outcomes.** The locked block must be PENDING:
+
+1. PENDING changes to CANCELLED, receives a microsecond-truncated
+   `cancelledAt=Instant.now()`, and proceeds to the audit described below. The block's
+   original `reason` field is not modified.
+2. ACTIVE throws `ProviderBlockNotPendingException` containing the actual ACTIVE status.
+   Status, `activatedAt`, `cancelledAt`, original reason, `updatedAt`, and audits remain
+   unchanged. No RecoveryJob or SlotOffer is restored or otherwise touched.
+3. CANCELLED throws `ProviderBlockNotPendingException` containing the actual CANCELLED
+   status. A repeated cancellation is rejected rather than treated as an idempotent
+   success; block fields and audits remain unchanged.
+
+**Audit and actor rule.** Success writes exactly one audit with
+`entityType='ProviderUnavailability'`, `entityId=<block id>`, `action='CANCEL'`, and
+`reason=<cancellationReason>`. The cancellation reason is optional and may be null; it is
+stored only on the audit row. Because this added operation has no original workflow actor
+specification, it follows the existing nullable-actor convention: `actorUserId=null` writes
+`actorType=SYSTEM` with a null actor ID, while a supplied ID writes `actorType=USER` with
+that ID.
+
+**Tests.** `ProviderBlockCancellationServiceTest` has 7 passing PostgreSQL integration
+tests for the PENDING success state, unchanged original reason, exact audit and optional
+cancellation reason, ACTIVE rejection, repeat-CANCELLED rejection, missing ID, both actor
+modes, and source-level proof that the three forbidden repositories are not imported.
