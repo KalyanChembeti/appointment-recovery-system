@@ -350,6 +350,13 @@ two transaction tasks, controlled latches/barriers around the intended serializa
 point, bounded future waits, expected winner/loser result, final database rows/audits, and a
 deadlock/timeout assertion.
 
+RM-09 and RM-10 were adapted from the original `RACE_MATRIX_ANALYSIS_RESULTS.md` prose to
+match Correction 6, which is already implemented: both PENDING and ACTIVE blocks stop new
+direct bookings and W12 offer creation. RM-09 therefore starts with a PENDING block rather
+than the contradictory ACTIVE block awaiting activation. RM-10 races booking against block
+creation rather than activation, because a pre-existing PENDING block would already reject
+the booking and make the original booking-versus-activation framing non-racy.
+
 1. **Accept offer A versus accept offer A.** Prove the offer row's terminal state has one
    winner; the waiter reports `OfferAlreadyAcceptedException` or another exact state-driven
    outcome and no duplicate Appointment/job/audit cascade commits.

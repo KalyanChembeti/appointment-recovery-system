@@ -91,6 +91,11 @@ transactions at the same time. Add true concurrent PostgreSQL Testcontainers cov
     `OfferAcceptancePatientConflictCleanup`;
 15. complete final-row and audit assertions for the existing same-Provider booking race.
 
+RM-09 and RM-10 use the corrected Correction 6 rule that PENDING blocks stop both direct
+bookings and W12 offer creation. RM-09 begins with a PENDING block, and RM-10 races booking
+against block creation because booking against a pre-existing PENDING block is not a
+timing-dependent activation race. `RaceMatrixProviderBlockTest` covers both corrected cases.
+
 The two-worker W12 case is complete. Both workers may discover the same OPEN job before
 either locks it. After the first creates an OFFERED offer and leaves the job OPEN, the
 second waits for the RecoveryJob lock, performs the non-locking

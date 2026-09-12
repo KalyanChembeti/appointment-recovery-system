@@ -9,6 +9,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.recoverysystem.domain.entity.Appointment;
 import com.recoverysystem.domain.entity.AuditLog;
+import com.recoverysystem.domain.entity.ProviderSchedule;
 import com.recoverysystem.domain.entity.RecoveryJob;
 import com.recoverysystem.domain.entity.SlotOffer;
 import com.recoverysystem.domain.entity.WaitlistEntry;
@@ -30,12 +31,12 @@ import com.recoverysystem.exception.RecoveryJobNotOpenException;
 import com.recoverysystem.exception.SlotOfferNotFoundException;
 import com.recoverysystem.repository.AppointmentRepository;
 import com.recoverysystem.repository.AuditLogRepository;
+import com.recoverysystem.repository.ProviderScheduleRepository;
 import com.recoverysystem.repository.RecoveryJobRepository;
 import com.recoverysystem.repository.SlotOfferRepository;
 import com.recoverysystem.repository.WaitlistEntryRepository;
 import com.recoverysystem.service.SchedulerReassignmentService;
 import java.sql.Date;
-import java.sql.Time;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -91,6 +92,9 @@ class SchedulerReassignmentServiceTest {
 
     @Autowired
     private AuditLogRepository auditLogRepository;
+
+    @Autowired
+    private ProviderScheduleRepository providerScheduleRepository;
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
@@ -547,14 +551,14 @@ class SchedulerReassignmentServiceTest {
     }
 
     private void insertWorkingHours(Long providerId, Instant offeredStartAt) {
-        jdbcTemplate.update(
-                "INSERT INTO provider_schedule "
-                        + "(provider_id, day_of_week, start_time, end_time, is_active) "
-                        + "VALUES (?, ?, ?, ?, true)",
-                providerId,
-                offeredStartAt.atZone(CLINIC_TIME_ZONE).getDayOfWeek().name(),
-                Time.valueOf(LocalTime.of(8, 0)),
-                Time.valueOf(LocalTime.of(18, 0)));
+        ProviderSchedule schedule = new ProviderSchedule();
+        schedule.setProviderId(providerId);
+        schedule.setDayOfWeek(
+                offeredStartAt.atZone(CLINIC_TIME_ZONE).getDayOfWeek());
+        schedule.setStartTime(LocalTime.of(8, 0));
+        schedule.setEndTime(LocalTime.of(18, 0));
+        schedule.setActive(true);
+        providerScheduleRepository.saveAndFlush(schedule);
     }
 
     private void insertProviderBlock(
