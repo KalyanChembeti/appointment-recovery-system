@@ -6,26 +6,19 @@ infrastructure to the MVP.
 
 ## Phase 1 - close current workflow gaps
 
-### Implement or rescope W13B scheduler reassignment
-
-**Current evidence.** No service method accepts a current Appointment plus a different
-target patient. `AppointmentReschedulingService.rescheduleAppointment(...)` always copies
-the old Appointment's patient and therefore cannot implement W13B. There is no W13B test.
-
-**Required follow-up.** Confirm the W13B transaction contract, then implement its canonical
-Provider/Appointment/RecoveryJob/WaitlistEntry/SlotOffer lock order, destination validation,
-state transitions, exact audit strings, exception outcomes, and PostgreSQL integration
-tests. Until that work exists, project status must say W13B is not implemented.
-
-### Complete W13A's authorization boundary
+### Complete the W13A and W13B authorization boundaries
 
 **Current evidence.** `OfferAcceptanceOrchestrator.acceptOffer(slotOfferId, patientId,
 actorUserId)` separates the patient from the audit actor and can execute the W4 transaction
 on behalf of another user. It does not authenticate `actorUserId`, load the actor's role, or
 check RECEPTIONIST authorization. `OfferAcceptanceOnBehalfTest` proves the existing calling
 convention and ownership check, but no controller or authenticated identity boundary exists.
+`SchedulerReassignmentService.reassignSlot(existingSlotOfferId, replacementPatientId,
+newAppointmentTypeId, actorUserId)` now implements the W13B transaction and attributes its
+three success audits to USER/the supplied actor ID. It likewise does not authenticate that
+ID or verify the RECEPTIONIST role.
 
-**Required follow-up.** Expose the operation through the future REST/security boundary,
+**Required follow-up.** Expose both operations through the future REST/security boundary,
 derive `actorUserId` from the authenticated server-side session, enforce the receptionist
 role, and add tests proving the patient and actor cannot be forged through request data.
 

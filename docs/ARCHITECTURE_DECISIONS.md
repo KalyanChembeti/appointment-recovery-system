@@ -433,3 +433,37 @@ reason, actor, and conditional branches.
 **Risks/invariants protected.** Audit rows follow transaction outcome. The current code
 does not enforce a database foreign key from `(entity_type, entity_id)` to polymorphic
 entities, so services and tests remain responsible for correct entity names and IDs.
+
+## 21. Treat W13B as a targeted offer replacement in one transaction
+
+**Decision.** `SchedulerReassignmentService.reassignSlot(...)` uses ordinary SlotOffer,
+RecoveryJob, and source Appointment reads for routing, then locks the released Provider,
+RecoveryJob, and targeted SlotOffer in that order. It validates the locked job as OPEN and
+the locked offer through `AcceptedOfferTerminalStateResolver`, inserts the replacement
+patient's Appointment, changes the offer from OFFERED to CANCELLED with reason
+`STAFF_OVERRIDE`, and changes the job from OPEN to FILLED. The original WaitlistEntry is not
+locked or mutated.
+
+**Reason.** The caller names the offer that is being overridden. The RecoveryJob lock
+serializes job-level changes, and `one_offered_per_recovery` guarantees there cannot be a
+second OFFERED offer for that job. Therefore W12's plain post-job-lock offer-existence check
+is unnecessary here. Keeping appointment insertion, offer cancellation, job fill, and their
+USER audits in one transaction makes every ordinary failure roll back the complete
+reassignment.
+
+**Where implemented.** `SchedulerReassignmentService.reassignSlot(...)` runs under
+`READ_COMMITTED` with `noRollbackFor=OfferExpiredException`. It calls
+`ProviderRepository.findByIdForUpdate(...)`,
+`RecoveryJobRepository.findByIdForUpdate(...)`, and
+`SlotOfferRepository.findByIdForUpdate(...)` in that order. It reuses
+`AppointmentBookingEligibilityValidator` and `BookingConstraintViolationTranslator`.
+`SchedulerReassignmentServiceTest` covers 14 success, rejection, expiry, rollback, audit,
+and unchanged-WaitlistEntry scenarios against PostgreSQL 15.
+
+**Risks/invariants protected.** Provider-first locking stays consistent with booking and
+recovery workflows. PostgreSQL exclusion constraints remain the authoritative final check
+for provider and patient overlap. `PatientDoubleBookedException`,
+`ProviderDoubleBookedException`, and unrecognized `DataIntegrityViolationException` use the
+normal rollback rule, so the offer remains OFFERED and the job remains OPEN. A stale OFFERED
+offer is the one exception: it changes to EXPIRED, receives a SYSTEM
+`SlotOffer`/`EXPIRE`/null audit, and commits before `OfferExpiredException` is returned.

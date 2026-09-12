@@ -7,16 +7,16 @@ On 2026-09-11, from the current working tree based on commit
 
 ```text
 BUILD SUCCESS
-Tests run: 244, Failures: 0, Errors: 0, Skipped: 0
-Total time: 2:01 min
+Tests run: 258, Failures: 0, Errors: 0, Skipped: 0
+Total time: 2:05 min
 ```
 
-The verification environment used Maven 3.9.9 and Microsoft OpenJDK 21.0.12.1. All 24
+The verification environment used Maven 3.9.9 and Microsoft OpenJDK 21.0.12.1. All 25
 test classes use Testcontainers with the `postgres:15` image. The fresh containers reported
 PostgreSQL 15.19. No test uses H2 or another in-memory database.
 
 `SchemaMigrationTest` deliberately does not start the Spring context; it runs Flyway
-programmatically and uses JDBC metadata/queries. The other 23 classes use
+programmatically and uses JDBC metadata/queries. The other 24 classes use
 `@SpringBootTest`, dynamic datasource properties, and PostgreSQL Testcontainers. Four
 classes are marked `@Transactional` at class level and run each test in a rollback-bound
 test transaction: `ReferenceEntityMappingTest`, `RecoveryJobEligibilityClassifierTest`,
@@ -56,9 +56,10 @@ sequential and are not evidence that simultaneous interleavings are safe.
 | `RecoveryCandidateSelectorTest` | 15 | W12 candidate query/ranking | every filter, historical offer scope, strict time rule, tie order | Sequential Spring integration in rollback test transactions; Testcontainers PostgreSQL 15 |
 | `RecoveryCandidateRevalidatorTest` | 16 | W12 post-lock checks | every stale condition, prior-offer scope, no mutation | Sequential Spring integration in rollback test transactions; Testcontainers PostgreSQL 15 |
 | `RecoveryWorkerServiceTest` | 12 | W12 worker transaction | all normal outcomes except stale integration, policy duration, ordering, stale offered-job routing, handled same-job race | 11 sequential committed Spring integration tests plus 1 true two-thread test; Testcontainers PostgreSQL 15 |
+| `SchedulerReassignmentServiceTest` | 14 | W13B scheduler reassignment | type selection, eligibility, complete offer terminal matrix, job state, rollback, exact audits, untouched waitlist entry | Sequential committed Spring integration with delta-based audit assertions; Testcontainers PostgreSQL 15 |
 | `ProviderBlockCreationServiceTest` | 9 | W14 request/creation | PENDING/ACTIVE choice and suppression cascade | Sequential committed Spring integration; Testcontainers PostgreSQL 15 |
 | `ProviderBlockActivationServiceTest` | 7 | W14 activation | conflict recheck, transition, suppression, actors, rejections | Sequential committed Spring integration; Testcontainers PostgreSQL 15 |
-| **Total** | **244** |  | **0 failures, 0 errors, 0 skipped** |  |
+| **Total** | **258** |  | **0 failures, 0 errors, 0 skipped** |  |
 
 ## Full test method result list
 
@@ -287,6 +288,23 @@ a method name documents the scenario that was executed, not a broader concurrenc
 - PASS `appointmentCancellationReasonMismatchIsRejectedByDatabase`
 - PASS `duplicateUserEmailIsRejected`
 
+### `SchedulerReassignmentServiceTest` - 14 passed
+
+- PASS `cancelledOfferIsRejectedAsAlreadyResolved`
+- PASS `acceptedOfferIsRejectedWithoutChanges`
+- PASS `nonexistentOfferIsRejected`
+- PASS `successfulReassignmentDoesNotChangeOriginalWaitlistEntry`
+- PASS `staleOfferedSlotIsExpiredAndCommittedBeforeException`
+- PASS `appointmentTypeWithDifferentSpecialtyIsRejectedWithoutChanges`
+- PASS `providerConflictRollsBackAndLeavesOfferOffered`
+- PASS `recoveryJobThatIsNotOpenIsRejectedWithoutChanges`
+- PASS `declinedOfferIsRejectedAsAlreadyResolved`
+- PASS `nullAppointmentTypeDefaultsToSourceTypeAndCreatesThreeAudits`
+- PASS `suppliedAppointmentTypeUsesItsOwnDurationForEndTime`
+- PASS `activeProviderBlockIsRejectedWithoutChanges`
+- PASS `patientConflictRollsBackAndLeavesOfferOffered`
+- PASS `pendingProviderBlockIsAlsoRejectedWithoutChanges`
+
 ### `SchemaMigrationTest` - 15 passed
 
 - PASS `migrationCreatesExpectedReferenceTablesAndColumns`
@@ -406,7 +424,7 @@ The current PostgreSQL suite validates these concrete areas:
 - `no_patient_overlap`, `no_provider_overlap`, adjacent half-open intervals,
   `one_offered_per_recovery`, unique recovery source, enum-like checks, audit actor checks,
   and reference foreign keys/uniqueness work in PostgreSQL.
-- W1-W12 and W14 request/activation sequential success, rejection, state, audit, and
+- W1-W13B and W14 request/activation sequential success, rejection, state, audit, and
   rollback branches listed by method above pass.
 - W4's stale-offer and provider-occupied `noRollbackFor` branches commit the intended rows;
   its patient-overlap branch rolls the main transaction back and then commits only the
@@ -419,8 +437,9 @@ The current PostgreSQL suite validates these concrete areas:
   targeting one OPEN job produce one `OFFER_CREATED`, one
   `OFFER_ALREADY_EXISTS_FOR_JOB`, and one committed SlotOffer.
 
-These tests do not validate W13B because no W13B service exists. They also do not validate
-W14 `PENDING -> CANCELLED` because no cancellation operation exists.
+W13B is validated sequentially for its complete status/validation/constraint branches and
+transaction outcomes. The suite does not validate W14 `PENDING -> CANCELLED` because no
+cancellation operation exists.
 
 ## Still requires true concurrent race validation
 

@@ -3,13 +3,14 @@
 ## Snapshot used for this handoff
 
 This document was created from commit `552505e86d0ee9ccc22d7c3017f2c6acbbd24ab0` on
-2026-09-11 and refreshed after the W12 same-job worker race fix and the dedicated W13A
-calling-convention tests. The current source changes add the post-RecoveryJob-lock offered
-slot check and its outcome; the current test changes cover that race and W13A accept on
-behalf. The six handoff files under `docs/` are still uncommitted documentation artifacts.
+2026-09-11 and refreshed after the W12 same-job worker race fix, the dedicated W13A
+calling-convention tests, and the W13B scheduler reassignment implementation. The current
+source includes the post-RecoveryJob-lock offered-slot check and W13B transaction service;
+the current tests cover the W12 race, W13A accept on behalf, and all specified W13B paths.
+The six handoff files under `docs/` are still uncommitted documentation artifacts.
 
 A fresh `mvn clean install` completed with `BUILD SUCCESS` on 2026-09-11. Surefire reported
-244 tests run, 0 failures, 0 errors, and 0 skipped. The build took 2 minutes 1 second. The
+258 tests run, 0 failures, 0 errors, and 0 skipped. The build took 2 minutes 5 seconds. The
 tracked and untracked `target/` output produced by Maven was removed or restored after the
 result was recorded so generated output is not part of the documentation change.
 
@@ -56,13 +57,13 @@ The production application root is `src/main/java/com/recoverysystem/`:
 - `repository/` contains 12 Spring Data JPA repositories. Locking queries live in
   `AppointmentRepository`, `ProviderRepository`, `ProviderUnavailabilityRepository`,
   `RecoveryJobRepository`, `WaitlistEntryRepository`, and `SlotOfferRepository`.
-- `service/` contains 28 workflow services and shared helpers. The package includes booking,
+- `service/` contains 29 workflow services and shared helpers. The package includes booking,
   appointment lifecycle, waitlist, offer, provider-block, and recovery-worker behavior.
 - `exception/` contains 32 domain exception classes.
 - `config/`, `security/`, `web/`, and `worker/` currently contain no Java source files.
 
 Resources live in `src/main/resources/`. Tests live in
-`src/test/java/com/recoverysystem/`; there are 23 `*Test.java` classes and two transactional
+`src/test/java/com/recoverysystem/`; there are 25 `*Test.java` classes and two transactional
 test harnesses under `support/`. The only application container in `docker-compose.yml` is
 PostgreSQL; the Spring Boot application and a frontend are not defined there.
 
@@ -138,7 +139,7 @@ the current source and tests, including partial or missing workflow implementati
 | W11 | Appointment no-show | `AppointmentNoShowService.markNoShow(...)` | Implemented and tested | `WaitlistReconciliationCascade` | `AppointmentNoShowServiceTest` |
 | W12 | Recovery worker offer generation | `RecoveryWorkerService.attemptRecovery()` | Implemented and tested with sequential integration tests and a true same-job two-worker test; no scheduler invokes it yet | `RecoveryJobEligibilityClassifier`, `RecoveryCandidateSelector`, `RecoveryCandidateRevalidator` | `RecoveryWorkerServiceTest`, `RecoveryJobEligibilityClassifierTest`, `RecoveryCandidateSelectorTest`, `RecoveryCandidateRevalidatorTest` |
 | W13A | Scheduler accepts on behalf | Reuses `OfferAcceptanceOrchestrator.acceptOffer(slotOfferId, patientId, actorUserId)` | Transaction mechanics and the separate patient/receptionist calling convention are tested; no REST endpoint or authenticated receptionist authorization exists | Entire W4 acceptance pipeline | `OfferAcceptanceOnBehalfTest` |
-| W13B | Scheduler reassigns to another patient | No service method exists | Not implemented and not tested | None | None |
+| W13B | Scheduler reassigns to another patient | `SchedulerReassignmentService.reassignSlot(...)` | Implemented and tested with sequential PostgreSQL integration tests | `AcceptedOfferTerminalStateResolver`, `AppointmentBookingEligibilityValidator`, `BookingConstraintViolationTranslator` | `SchedulerReassignmentServiceTest` |
 | W14 | Provider-block request and activation | `ProviderBlockCreationService.createProviderBlock(...)` and `ProviderBlockActivationService.activateProviderBlock(...)` | Creation and `PENDING -> ACTIVE` are implemented and tested; `PENDING -> CANCELLED` is absent | `RecoveryJobSuppressionCascade` | `ProviderBlockCreationServiceTest`, `ProviderBlockActivationServiceTest` |
 
 Detailed state transitions, audits, exception classes, and lock sequences for every row are
@@ -150,7 +151,7 @@ The fresh build result is:
 
 ```text
 BUILD SUCCESS
-Tests run: 244, Failures: 0, Errors: 0, Skipped: 0
+Tests run: 258, Failures: 0, Errors: 0, Skipped: 0
 ```
 
 All integration tests use PostgreSQL 15 through Testcontainers. Two tests use real
@@ -173,9 +174,8 @@ The build emitted no errors. It emitted these warnings or expected diagnostic me
 
 ## Remaining Phase 1 work
 
-1. Resolve or explicitly defer the current workflow gaps: W13B scheduler reassignment has
-   no implementation, W13A has no API/role enforcement, and W14 has no
-   `PENDING -> CANCELLED` transition.
+1. Resolve or explicitly defer the remaining workflow-boundary gaps: W13A and W13B have no
+   API/role enforcement, and W14 has no `PENDING -> CANCELLED` transition.
 2. Add the Step 7 true-concurrency race matrix described in
    `docs/CONCURRENCY_AND_LOCKING.md`. Sequential integration tests already verify state and
    rollback behavior but do not exercise most two-transaction interleavings.
@@ -205,7 +205,7 @@ The build emitted no errors. It emitted these warnings or expected diagnostic me
 
 | Area | Older or stated expectation | Current implemented behavior | Future action required? |
 |---|---|---|---|
-| Overall workflow count | The handoff request says all 14 workflows are complete. | W1-W12 and W14 request/activation exist. W13A reuses tested W4 mechanics but lacks its API/authorization boundary. W13B has no implementation. | Yes. Implement W13B and W13A's authenticated boundary or revise the accepted scope. |
+| Overall workflow count | The handoff request says all 14 workflows are complete. | W1-W13B and W14 request/activation transaction services exist. W13A and W13B still lack REST/authenticated receptionist boundaries, and W14 lacks `PENDING -> CANCELLED`. | Yes. Add authenticated boundaries and implement or explicitly remove the W14 cancellation transition from scope. |
 | W12 outcomes | The handoff request refers to seven terminal/proceed outcomes. | `RecoveryWorkerOutcome` contains nine values: `NO_OPEN_JOBS`, `OFFER_CREATED`, `OFFER_ALREADY_EXISTS_FOR_JOB`, `RELEASED_INTERVAL_OCCUPIED`, `PROVIDER_ACTIVELY_BLOCKED`, `PROVIDER_PENDING_BLOCKED`, `LEAD_TIME_CLOSED`, `NO_ELIGIBLE_CANDIDATE`, and `CANDIDATE_BECAME_STALE`. | Documentation must preserve all nine. The ninth outcome deliberately handles a stale routing-read race after the RecoveryJob lock. |
 | Provider-block lifecycle | The older lifecycle requires both `PENDING -> ACTIVE` and `PENDING -> CANCELLED`. | `ProviderBlockActivationService` implements `PENDING -> ACTIVE`; no cancellation service or method implements `PENDING -> CANCELLED`. | Yes, unless cancellation is removed from scope. |
 | Reconciliation invariant handling | The older design text says an `ACCEPTED` offer encountered during reconciliation is an invariant violation. | `WaitlistReconciliationCascade` selects only `ACTIVE` entries and only `OFFERED` offers. It removes/cancels those rows and does not inspect `ACCEPTED`, `DECLINED`, `EXPIRED`, or already `CANCELLED` offers. | Needs a product/design decision before changing current tested behavior. |
@@ -213,15 +213,16 @@ The build emitted no errors. It emitted these warnings or expected diagnostic me
 | Scheduling policy cardinality | The migration inserts one default policy row. | The database does not enforce a singleton; `RecoveryJobEligibilityClassifier` and `RecoveryWorkerService` call `findAll().getFirst()`, which fails if no row exists and silently chooses one if multiple rows exist. | Yes if administrators will edit policy data. Define and enforce selection/cardinality rules. |
 | Server-side session security | Server-side sessions and no JWT are the planned architecture. | `application.yml` contains JDBC-session properties, but `pom.xml` has no Spring Session JDBC dependency. There are no controllers, login flow, `SecurityFilterChain`, role checks, or code that derives workflow actors from an authenticated session. | Yes, Phase 1 REST/security work must add the session dependency and identity boundary. |
 | Scheduled workers | Polling properties and `@EnableScheduling` suggest automatic workers. | No `@Scheduled` method invokes the recovery or expiry worker service. | Yes, Phase 1 scheduling work. |
-| Repository overview | `README.md` describes the database and domain implementation as pending and lists populated `config`, `security`, `web`, and `worker` packages. | The database, entities, repositories, services, and 244 tests now exist; those four packages have no Java source files. | Yes. Update the README when the current handoff is accepted. |
+| Repository overview | `README.md` describes the database and domain implementation as pending and lists populated `config`, `security`, `web`, and `worker` packages. | The database, entities, repositories, services, and 258 tests now exist; those four packages have no Java source files. | Yes. Update the README when the current handoff is accepted. |
 | Documentation references | Source Javadoc and `DOCUMENT_INVENTORY.md` refer to design/output documents such as `IMPLEMENTATION_HANDBOOK.md` and `SECTION_2C_V3_COMPLETE.md`. | Those named files are not present in this repository; `docs/PROJECT_1_MASTER_HANDOFF.md` and the current handoff files are present. | Yes. Replace or remove dead references when documentation ownership is settled. |
 | Build output in Git | Build output should normally be disposable. | Fifteen files under `target/` are tracked, so `mvn clean install` modifies tracked generated artifacts until they are restored. | Yes. Remove tracked build output and ensure `target/` remains ignored in a separate repository-hygiene change. |
 
 ## Current stopping point
 
-The transaction services and PostgreSQL integration suite are stable at 244 passing tests,
-but the source does not support the claim that every W1-W14 entry is complete. The next
-implementation task is to resolve the missing W13B and W14 `PENDING -> CANCELLED` scope,
-then write the Step 7 true-concurrency tests for the implemented lock graph. After those
-races pass, add REST endpoints and session-based Spring Security, followed by scheduled
-adapters for W6 and W12.
+The transaction services and PostgreSQL integration suite are stable at 258 passing tests,
+but the source does not support the claim that every W1-W14 entry is complete at the
+application boundary. The next implementation task is to resolve the W14
+`PENDING -> CANCELLED` scope, then write the Step 7 true-concurrency tests for the
+implemented lock graph. After those races pass, add REST endpoints and session-based Spring
+Security, including authenticated receptionist boundaries for W13A and W13B, followed by
+scheduled adapters for W6 and W12.

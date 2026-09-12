@@ -117,7 +117,7 @@ a new row rather than an acquired row lock.
 | W11 No-show | Appointment `findByIdForUpdate` -> ACTIVE anchored entries ascending -> OFFERED child offers ascending | Appointment status checked before reconciliation; no time check exists |
 | W12 Recovery worker | unlocked oldest-job/routing reads -> released Provider `findByIdForUpdate` -> RecoveryJob `findByIdForUpdate` -> plain `existsByRecoveryJobIdAndStatus(..., OFFERED)` read -> selected WaitlistEntry `findByIdForUpdate` -> SlotOffer insert | The plain existence check acquires no SlotOffer lock; job classification follows Provider+Job locks; one candidate is selected then revalidated after its lock |
 | W13A Accept on behalf | No separate path; when represented by W4, it uses the complete W4 main and cleanup sequences | Current service does not lock/load the actor User or enforce RECEPTIONIST role |
-| W13B Scheduler reassign | No implementation and therefore no lock sequence | Must be designed and tested before any concurrency guarantee is stated |
+| W13B Scheduler reassign | unlocked SlotOffer -> RecoveryJob -> source Appointment routing reads -> released Provider `findByIdForUpdate` -> RecoveryJob `findByIdForUpdate` -> targeted SlotOffer `findByIdForUpdate` -> Appointment insert/flush | Job must be OPEN; offer terminal state is revalidated after its lock; no WaitlistEntry lock or post-job-lock offer-existence query is used |
 | W14 Block request, conflicts | Provider `findByIdForUpdate` -> PENDING ProviderUnavailability insert | Scheduled conflicts are queried while Provider is held; no job/offer mutation occurs |
 | W14 Block request, no conflicts | Provider `findByIdForUpdate` -> ACTIVE ProviderUnavailability insert -> overlapping OPEN RecoveryJobs `findOpenOverlappingByProviderForUpdate` ascending -> their OFFERED SlotOffers `findOfferedByRecoveryJobIdsForUpdate` ascending | Scheduled conflict discovery precedes block insert; suppression children are found while Provider is held |
 | W14 Block activation | routing ProviderUnavailability -> Provider `findByIdForUpdate` -> ProviderUnavailability `findByIdForUpdate` -> overlapping OPEN RecoveryJobs ascending -> their OFFERED SlotOffers ascending | PENDING status and absence of scheduled conflicts are rechecked before activation and suppression |
@@ -260,6 +260,35 @@ EXPIRED, or CANCELLED.
 The helper tests prove commit-versus-rollback behavior with sequential transaction
 boundaries. They do not yet prove simultaneous accept/decline/expiry interleavings.
 
+## W13B transaction and rollback boundary
+
+`SchedulerReassignmentService.reassignSlot(...)` performs unlocked routing reads of the
+target SlotOffer, its RecoveryJob, and the job's source Appointment. The authoritative lock
+sequence is:
+
+1. `ProviderRepository.findByIdForUpdate(offeredProviderId)`;
+2. `RecoveryJobRepository.findByIdForUpdate(recoveryJobId)`;
+3. `SlotOfferRepository.findByIdForUpdate(existingSlotOfferId)`.
+
+The locked job must still be OPEN or `RecoveryJobNotOpenException` is thrown. The locked
+offer is passed to `AcceptedOfferTerminalStateResolver`: ACCEPTED throws
+`OfferAlreadyAcceptedException`; DECLINED or CANCELLED throws
+`OfferAlreadyResolvedException`; EXPIRED throws `OfferExpiredException`; stale OFFERED
+becomes EXPIRED with a SYSTEM `SlotOffer`/`EXPIRE`/null audit and then throws
+`OfferExpiredException`; unexpired OFFERED proceeds. The transaction declares
+`noRollbackFor=OfferExpiredException`, so only the aggressive stale-offer transition commits
+after a thrown exception.
+
+The service never locks the WaitlistEntry and never calls
+`existsByRecoveryJobIdAndStatus(...)`. The targeted offer and the
+`one_offered_per_recovery` unique index are why a W12-style existence recheck is not needed.
+After eligibility validation, the Appointment insert is flushed before offer/job mutation.
+`ProviderDoubleBookedException`, `PatientDoubleBookedException`, and any unrecognized
+`DataIntegrityViolationException` roll back normally. Success changes the offer to
+CANCELLED with `SlotOffer`/`CANCEL`/`STAFF_OVERRIDE`, changes the job to FILLED with
+`RecoveryJob`/`FILLED`/null, inserts the replacement Appointment with
+`Appointment`/`CREATE`/null, and attributes all three audits to USER/the supplied actor ID.
+
 ## W12 stale-candidate behavior
 
 W12 performs an unlocked ranked query, then locks one WaitlistEntry by ID. The locked row
@@ -346,6 +375,18 @@ deadlock/timeout assertion.
     `REQUIRES_NEW` cleanup commits only accepted-offer CANCELLED plus
     `SlotOffer`/`CANCEL`/`PATIENT_SCHEDULE_CONFLICT`, preserving RecoveryJob state.
 
-W13B cannot receive a race test until its service, lock sequence, transitions, exceptions,
-and audit contract exist. The missing W14 PENDING-to-CANCELLED transition likewise has no
-current operation to race against activation.
+16. **W13B reassignment versus W4 acceptance of the same offer.** Prove the common released
+    Provider and RecoveryJob serialization produces one winner. If W4 wins, W13B must see a
+    non-OPEN job and throw `RecoveryJobNotOpenException`; if W13B wins, W4 must see the
+    FILLED job and throw `RecoveryJobNotOpenException`. Assert one replacement Appointment,
+    one terminal offer result, one FILLED job, and only the winner's audit set.
+
+17. **W13B reassignment versus decline of the same offer.** Prove one terminal transition
+    wins the SlotOffer lock. If decline wins, W13B must throw `OfferAlreadyResolvedException`
+    for DECLINED and leave the job OPEN; if reassignment wins, decline must throw
+    `SlotOfferNotOfferedException` for CANCELLED while the W13B Appointment and FILLED job
+    remain committed.
+
+W13B now has sequential transaction coverage but no true two-thread test. The missing W14
+PENDING-to-CANCELLED transition likewise has no current operation to race against
+activation.

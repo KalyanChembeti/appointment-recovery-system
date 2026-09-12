@@ -3,8 +3,9 @@
 This guide maps the numbered workflows to the current Java and PostgreSQL implementation.
 Every state, exception, audit string, and lock sequence below comes from the current source.
 W13A mechanics are implemented and tested through the reusable W4 entry point, but its
-authentication/authorization boundary is absent. W13B and the W14 `PENDING -> CANCELLED`
-transition are absent; those entries are labeled accordingly.
+authentication/authorization boundary is absent. W13B is implemented and tested as a
+transaction service. The W14 `PENDING -> CANCELLED` transition is absent and is labeled
+accordingly.
 
 ## Workflow index
 
@@ -23,7 +24,7 @@ transition are absent; those entries are labeled accordingly.
 | W11 | Appointment no-show | `AppointmentNoShowService.markNoShow(...)` | `AppointmentNoShowServiceTest` |
 | W12 | Recovery worker offer generation | `RecoveryWorkerService.attemptRecovery()` | `RecoveryWorkerServiceTest`, `RecoveryJobEligibilityClassifierTest`, `RecoveryCandidateSelectorTest`, `RecoveryCandidateRevalidatorTest` |
 | W13A | Scheduler accepts on behalf | Reuses `OfferAcceptanceOrchestrator.acceptOffer(...)`; no separate entry point | `OfferAcceptanceOnBehalfTest` |
-| W13B | Scheduler reassigns to another patient | No implementation | No test |
+| W13B | Scheduler reassigns to another patient | `SchedulerReassignmentService.reassignSlot(...)` | `SchedulerReassignmentServiceTest` |
 | W14 | Provider-block request and activation | `ProviderBlockCreationService.createProviderBlock(...)`; `ProviderBlockActivationService.activateProviderBlock(...)` | `ProviderBlockCreationServiceTest`, `ProviderBlockActivationServiceTest` |
 
 ## Shared transaction mechanisms
@@ -48,7 +49,7 @@ called with a Provider that its caller has already locked.
    throws `ProviderUnavailableException`.
 6. It returns `ResolvedBooking(appointmentTypeId, startAt, endAt)`.
 
-W1 and W3 use this helper. W4 does not: it takes provider, interval, and appointment type
+W1, W3, and W13B use this helper. W4 does not: it takes provider, interval, and appointment type
 from the released source appointment and the accepted waitlist entry, then performs its own
 block and occupancy checks.
 
@@ -62,7 +63,7 @@ walks exception causes and messages:
 - constraint `no_patient_overlap` becomes `PatientDoubleBookedException`;
 - an unrecognized `DataIntegrityViolationException` is returned unchanged.
 
-W1, W3, and W4 call `AppointmentRepository.flush()` immediately after saving a new
+W1, W3, W4, and W13B call `AppointmentRepository.flush()` immediately after saving a new
 appointment so these constraint failures happen inside the service's guarded block.
 
 ### Anchored waitlist reconciliation
@@ -89,8 +90,8 @@ W2 passes `APPOINTMENT_CANCELLED`, W3 passes `APPOINTMENT_RESCHEDULED`, W10 pass
 
 W1-W4, W8-W10, W12, and W14 use `ActorType.SYSTEM` with `actorUserId=null` when their
 contract permits a system actor; otherwise they use `ActorType.USER` with the supplied ID.
-W5 and W7 always use the patient ID with `ActorType.USER`. W11 always uses
-`ActorType.USER` with its required receptionist actor ID. W6 always uses
+W5 and W7 always use the patient ID with `ActorType.USER`. W11 and W13B always use
+`ActorType.USER` with their required receptionist actor IDs. W6 always uses
 `ActorType.SYSTEM` with `actorUserId=null`. The database constraint
 `audit_log_actor_valid` enforces the matching nullability.
 
@@ -826,15 +827,110 @@ REST/security boundary means W13A must not be reported as a complete authorized 
 
 ## W13B - Scheduler reassigns to another patient
 
-**Current status.** No production service accepts an old Appointment and a different target
-patient for scheduler reassignment. No repository orchestration, audit contract, exception
-set, or test class exists for W13B.
+**Implementation and transaction boundary.**
+`SchedulerReassignmentService.reassignSlot(Long existingSlotOfferId, Long
+replacementPatientId, Long newAppointmentTypeId, Long actorUserId)` runs in one
+`READ_COMMITTED` transaction. `OfferExpiredException` is the only exception in
+`noRollbackFor`. The service does not use an outer orchestrator or a separate cleanup
+transaction: appointment insertion and the successful offer/job transitions are one atomic
+unit, while aggressive stale-offer expiry is allowed to commit before the exception reaches
+the caller.
 
-`AppointmentReschedulingService.rescheduleAppointment(...)` is not a W13B substitute: it
-always copies `patientId` from the old routing Appointment into the replacement and exposes
-no target-patient argument. Therefore there is no current lock sequence, state transition,
-audit behavior, or tested rejection outcome to document for W13B. Its design and
-implementation remain Phase 1 follow-up work.
+**Routing reads and complete lock order.** The service first uses three ordinary, unlocked
+primary-key reads to discover the parent rows and offered interval:
+
+1. `SlotOfferRepository.findById(existingSlotOfferId)` supplies `recoveryJobId`; absence
+   throws `SlotOfferNotFoundException`.
+2. `RecoveryJobRepository.findById(recoveryJobId)` supplies `sourceAppointmentId`; absence
+   throws `RecoveryJobNotFoundException`.
+3. `AppointmentRepository.findById(sourceAppointmentId)` supplies the offered Provider,
+   start time, and source AppointmentType; absence throws `AppointmentNotFoundException`.
+
+It then takes explicit `PESSIMISTIC_WRITE` locks in this order:
+
+1. `ProviderRepository.findByIdForUpdate(offeredProviderId)` locks the offered Provider;
+   absence throws `ProviderNotFoundException`.
+2. `RecoveryJobRepository.findByIdForUpdate(recoveryJobId)` locks the targeted RecoveryJob;
+   disappearance throws `RecoveryJobNotFoundException`. A status other than OPEN throws
+   `RecoveryJobNotOpenException` with the actual status.
+3. `SlotOfferRepository.findByIdForUpdate(existingSlotOfferId)` locks the targeted offer;
+   disappearance throws `SlotOfferNotFoundException`.
+
+The service does not lock the original WaitlistEntry and never reads or mutates it. It also
+does not run `existsByRecoveryJobIdAndStatus(...)`: unlike W12's untargeted routing read,
+W13B targets one specific offer, and the `one_offered_per_recovery` partial unique index
+allows only one OFFERED offer for that RecoveryJob.
+
+**Appointment type and destination validation.** If `newAppointmentTypeId` is null, the
+effective AppointmentType is the source Appointment's `appointmentTypeId`; otherwise the
+supplied ID is used. After the offer lock and terminal-state check, the service calls
+`AppointmentBookingEligibilityValidator.resolveAndValidate(lockedProvider,
+effectiveAppointmentTypeId, offeredStartAt)`. That helper:
+
+1. throws `AppointmentTypeNotFoundException` if the effective AppointmentType does not
+   exist;
+2. derives `endAt` from that type's `durationMinutes`;
+3. throws `AppointmentTypeSpecialtyMismatchException` if the type and locked Provider have
+   different `specialtyId` values;
+4. throws `ProviderUnavailableException` for an overlapping ACTIVE or PENDING
+   ProviderUnavailability row;
+5. throws `ProviderUnavailableException` when the interval is invalid, crosses the clinic's
+   local midnight, or is not fully contained in an active ProviderSchedule row.
+
+The service deliberately does not make a proactive scheduled-appointment occupancy query.
+The PostgreSQL `no_provider_overlap` and `no_patient_overlap` exclusion constraints decide
+the final conflict result when the new Appointment is flushed.
+
+**Complete offer terminal-state outcomes.** The locked offer is passed to
+`AcceptedOfferTerminalStateResolver.resolve(slotOffer)`:
+
+1. `ACCEPTED` throws `OfferAlreadyAcceptedException`; the offer, job, WaitlistEntry, and
+   Appointment rows remain unchanged and no audit is written.
+2. `DECLINED` throws `OfferAlreadyResolvedException` containing `DECLINED`; all state remains
+   unchanged and no audit is written.
+3. `CANCELLED` throws `OfferAlreadyResolvedException` containing `CANCELLED`; all state
+   remains unchanged and no audit is written.
+4. `EXPIRED` throws `OfferExpiredException`; the already-terminal offer remains EXPIRED and
+   no new audit is written.
+5. `OFFERED` with `expiresAt <= Instant.now()` changes to EXPIRED, writes exactly one audit
+   with `entityType='SlotOffer'`, `entityId=<offer id>`, `action='EXPIRE'`, `reason=null`,
+   `actorType=SYSTEM`, and `actorUserId=null`, then throws `OfferExpiredException`. The
+   service's `noRollbackFor` commits that expiry and audit while leaving the RecoveryJob
+   OPEN, the WaitlistEntry unchanged, and the Appointment count unchanged.
+6. `OFFERED` with `expiresAt > Instant.now()` passes terminal validation and proceeds to
+   booking validation and insertion.
+
+**Appointment constraint outcomes.** The new SCHEDULED Appointment uses
+`patientId=replacementPatientId`, the released source Provider and start time, the effective
+AppointmentType, and the helper-derived end time. The service saves and immediately flushes
+it. Constraint `no_provider_overlap` is translated to `ProviderDoubleBookedException`;
+constraint `no_patient_overlap` is translated to `PatientDoubleBookedException`; any other
+integrity failure remains the original `DataIntegrityViolationException`. Each of these
+three outcomes rolls back the new Appointment and all W13B offer/job/audit changes, so the
+target offer remains OFFERED, the job remains OPEN, and the WaitlistEntry remains unchanged.
+
+**Success state and exact audits.** A successful transaction:
+
+1. inserts the new SCHEDULED Appointment described above;
+2. changes the targeted SlotOffer from OFFERED to CANCELLED and writes
+   `entityType='SlotOffer'`, `entityId=<offer id>`, `action='CANCEL'`,
+   `reason='STAFF_OVERRIDE'`;
+3. changes the RecoveryJob from OPEN to FILLED, assigns a microsecond-truncated `filledAt`,
+   and writes `entityType='RecoveryJob'`, `entityId=<job id>`, `action='FILLED'`,
+   `reason=null`;
+4. writes `entityType='Appointment'`, `entityId=<new appointment id>`, `action='CREATE'`,
+   `reason=null`.
+
+All three success audits use `actorType=USER` and the supplied `actorUserId`. The original
+WaitlistEntry stays in its prior state, including its `updatedAt`; W13B does not fulfill,
+remove, or otherwise modify it.
+
+**Tests.** `SchedulerReassignmentServiceTest` contains 14 passing PostgreSQL integration
+tests. They cover source-type fallback, a supplied type with a different duration,
+specialty mismatch, ACTIVE and PENDING Provider blocks, ACCEPTED/DECLINED/CANCELLED offer
+states, committed aggressive expiry, non-OPEN RecoveryJob, missing offer, patient and
+Provider exclusion-constraint conflicts with complete rollback, the exact three success
+audits and actor attribution, and unchanged original WaitlistEntry state.
 
 ## W14 - Provider-block request and activation
 
