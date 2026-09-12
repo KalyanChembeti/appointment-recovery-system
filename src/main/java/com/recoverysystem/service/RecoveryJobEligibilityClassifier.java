@@ -71,7 +71,12 @@ public class RecoveryJobEligibilityClassifier {
             return false;
         }
 
-        SchedulingPolicy policy = schedulingPolicyRepository.findAll().getFirst();
+        SchedulingPolicy policy = schedulingPolicyRepository.findAll().stream()
+                .findFirst()
+                .orElseThrow(() -> new IllegalStateException(
+                        "SchedulingPolicy singleton row is missing -- V2 migration should have inserted "
+                                + "exactly one row and V3's unique index should prevent more than one from ever "
+                                + "existing"));
         Instant leadTimeThreshold = Instant.now().plus(
                 policy.getMinimumRecoveryLeadMinutes(), ChronoUnit.MINUTES);
         if (releasedStartAt.isBefore(leadTimeThreshold)) {

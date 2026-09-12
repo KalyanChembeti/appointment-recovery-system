@@ -146,7 +146,12 @@ public class RecoveryWorkerService {
             return RecoveryWorkerOutcome.CANDIDATE_BECAME_STALE;
         }
 
-        SchedulingPolicy policy = schedulingPolicyRepository.findAll().getFirst();
+        SchedulingPolicy policy = schedulingPolicyRepository.findAll().stream()
+                .findFirst()
+                .orElseThrow(() -> new IllegalStateException(
+                        "SchedulingPolicy singleton row is missing -- V2 migration should have inserted "
+                                + "exactly one row and V3's unique index should prevent more than one from ever "
+                                + "existing"));
         SlotOffer slotOffer = new SlotOffer();
         slotOffer.setRecoveryJobId(jobId);
         slotOffer.setWaitlistEntryId(candidateId);

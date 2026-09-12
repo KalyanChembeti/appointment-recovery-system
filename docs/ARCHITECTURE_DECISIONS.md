@@ -499,3 +499,32 @@ on the ProviderUnavailability row. Cancellation never changes recovery or offer 
 cannot silently overwrite ACTIVE or CANCELLED. The current tests prove each sequential
 state outcome; the simultaneous activation-versus-cancellation interleaving still requires
 a true two-thread test.
+
+## 23. Use the application clock for offer-expiry comparisons
+
+**Decision.** Expiry-related time comparisons use Java `Instant.now()` in application code,
+not PostgreSQL `clock_timestamp()` embedded in repository queries. This applies to
+`SlotOfferAggressiveExpiryTransition`, `AcceptedOfferTerminalStateResolver`, and the
+offer-expiry worker. `SlotOfferExpiryWorkerService.expireStaleOffers(...)` supplies its
+`Instant.now()` value to the unlocked discovery query, then
+`SlotOfferExpiryOfferProcessor.expireOfferIfEligible(...)` locks each discovered SlotOffer
+through `SlotOfferRepository.findByIdForUpdate(...)`. The authoritative transition check
+runs after that row lock and treats `expiresAt <= Instant.now()` as expired.
+
+**Reason.** Using one application-clock rule keeps direct acceptance and background expiry
+consistent. The unlocked worker query only discovers possible work; the post-lock check
+decides whether the SlotOffer is still OFFERED and stale, so a changed or concurrently
+resolved row is left untouched.
+
+**Where implemented.** `AcceptedOfferTerminalStateResolver.resolve(...)` compares an
+already-locked OFFERED SlotOffer with `Instant.now()` before calling
+`SlotOfferAggressiveExpiryTransition.expireIfStaleOffered(...)`. The same transition is
+called by `SlotOfferExpiryOfferProcessor.expireOfferIfEligible(...)` after it acquires the
+SlotOffer row lock. `SlotOfferExpiryWorkerService.expireStaleOffers(...)` passes a Java
+`Instant.now()` threshold to `SlotOfferRepository.findStaleOfferedIds(...)` for discovery.
+
+**Risks/invariants protected.** Application and database clocks must be kept sufficiently
+synchronized for operational accuracy. Correctness at the transition boundary does not
+depend on the unlocked discovery snapshot because every discovered row is rechecked under
+its SlotOffer lock before it is changed to EXPIRED and receives its SYSTEM
+`SlotOffer`/`EXPIRE` audit.

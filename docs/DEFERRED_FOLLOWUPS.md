@@ -51,29 +51,6 @@ untouched but do not define an ACCEPTED invariant failure.
 whether reconciliation must discover and reject an ACCEPTED offer. If changed, specify the
 exception class and rollback behavior before modifying the shared W2/W3/W10/W11 cascade.
 
-### Define SchedulingPolicy cardinality
-
-**Current evidence.** V2 inserts one default SchedulingPolicy row, but no constraint limits
-the table to one row. `RecoveryJobEligibilityClassifier` and `RecoveryWorkerService` call
-`schedulingPolicyRepository.findAll().getFirst()` with no ordering. Zero rows cause
-`NoSuchElementException`; multiple rows make an unspecified repository-first row effective.
-
-**Required follow-up.** Decide whether policy is a singleton, versioned history, or an
-explicitly selected active row. Add the matching schema constraint/query and tests before
-administrative policy editing is exposed.
-
-### Confirm the offer-expiry clock source
-
-**Current evidence.** `SlotOfferExpiryWorkerService`,
-`SlotOfferExpiryOfferProcessor`, `SlotOfferAggressiveExpiryTransition`, and
-`AcceptedOfferTerminalStateResolver` use Java `Instant.now()`. Worker discovery tests
-`expiresAt < supplied now`; locked transition treats `expiresAt <= Instant.now()` as stale.
-Older design discussion referred to database-clock comparisons.
-
-**Required follow-up.** Confirm that application-clock semantics are accepted. If database
-time is required, change discovery and locked revalidation together and add boundary/clock
-tests; do not silently mix clock sources.
-
 ## Phase 1 - Step 7 concurrent race matrix
 
 The same-Provider direct-booking race and the two-worker W12 race currently run two workflow

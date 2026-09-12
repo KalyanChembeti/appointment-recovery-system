@@ -318,6 +318,17 @@ class SchemaMigrationTest {
     }
 
     @Test
+    void schedulingPolicyRejectsSecondRow() throws SQLException {
+        try (Connection connection = openConnection();
+             Statement statement = connection.createStatement()) {
+            SQLException violation = assertThrows(SQLException.class,
+                    () -> statement.executeUpdate("INSERT INTO scheduling_policy DEFAULT VALUES"));
+
+            assertEquals("23505", violation.getSQLState());
+        }
+    }
+
+    @Test
     void auditLogActorRulesAreEnforced() throws SQLException {
         try (Connection connection = openConnection()) {
             ReferenceData data = createReferenceData(connection);

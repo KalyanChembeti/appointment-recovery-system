@@ -409,7 +409,9 @@ class ReferenceEntityMappingTest {
 
     @Test
     void schedulingPolicyRepositoryRoundTrip() {
-        SchedulingPolicy policy = new SchedulingPolicy();
+        SchedulingPolicy policy = schedulingPolicyRepository.findAll().stream()
+                .findFirst()
+                .orElseThrow();
         policy.setMinimumRecoveryLeadMinutes(45);
         policy.setOfferDurationMinutes(15);
 
