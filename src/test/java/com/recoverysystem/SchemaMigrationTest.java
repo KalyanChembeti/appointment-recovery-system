@@ -12,7 +12,9 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.time.OffsetDateTime;
+import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
@@ -62,6 +64,55 @@ class SchemaMigrationTest {
                 assertTrue(tableExists(metadata, table), () -> "Expected table to exist: " + table);
                 assertEquals(entry.getValue(), columnsFor(metadata, table),
                         () -> "Unexpected columns for table: " + table);
+            }
+        }
+    }
+
+    @Test
+    void flywayAppliesMigrationsThroughSpringSessionV4() throws SQLException {
+        List<String> appliedVersions = new ArrayList<>();
+
+        try (Connection connection = openConnection();
+             Statement statement = connection.createStatement();
+             ResultSet result = statement.executeQuery(
+                     "SELECT version, success FROM flyway_schema_history "
+                             + "WHERE type = 'SQL' ORDER BY installed_rank")) {
+            while (result.next()) {
+                assertTrue(result.getBoolean("success"));
+                appliedVersions.add(result.getString("version"));
+            }
+        }
+
+        assertEquals(List.of("1", "2", "3", "4"), appliedVersions);
+    }
+
+    @Test
+    void migrationCreatesSpringSessionTablesAndColumns() throws SQLException {
+        Map<String, Set<String>> expectedColumns = Map.of(
+                "spring_session", Set.of(
+                        "primary_id",
+                        "session_id",
+                        "creation_time",
+                        "last_access_time",
+                        "max_inactive_interval",
+                        "expiry_time",
+                        "principal_name"),
+                "spring_session_attributes", Set.of(
+                        "session_primary_id", "attribute_name", "attribute_bytes"));
+        Map<String, Set<String>> expectedPrimaryKeys = Map.of(
+                "spring_session", Set.of("primary_id"),
+                "spring_session_attributes", Set.of("session_primary_id", "attribute_name"));
+
+        try (Connection connection = openConnection()) {
+            DatabaseMetaData metadata = connection.getMetaData();
+
+            for (Map.Entry<String, Set<String>> entry : expectedColumns.entrySet()) {
+                String table = entry.getKey();
+                assertTrue(tableExists(metadata, table), () -> "Expected table to exist: " + table);
+                assertEquals(entry.getValue(), columnsFor(metadata, table),
+                        () -> "Unexpected columns for table: " + table);
+                assertEquals(expectedPrimaryKeys.get(table), primaryKeyColumnsFor(metadata, table),
+                        () -> "Unexpected primary key for table: " + table);
             }
         }
     }
