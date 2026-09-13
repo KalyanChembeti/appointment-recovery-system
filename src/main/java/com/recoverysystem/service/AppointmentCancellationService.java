@@ -55,7 +55,8 @@ public class AppointmentCancellationService {
     public Appointment cancelAppointment(
             Long appointmentId,
             CancellationReason cancellationReason,
-            Long actorUserId) {
+            Long actorUserId,
+            String reasonText) {
         Appointment routingAppointment = appointmentRepository.findById(appointmentId)
                 .orElseThrow(() -> new AppointmentNotFoundException(appointmentId));
         Long providerId = routingAppointment.getProviderId();
@@ -88,7 +89,7 @@ public class AppointmentCancellationService {
         appointment.setStatus(AppointmentStatus.CANCELLED);
         appointment.setCancellationReason(cancellationReason);
         auditLogRepository.save(createAuditLog(
-                "Appointment", appointmentId, "CANCEL", actorType, actorUserId, null));
+                "Appointment", appointmentId, "CANCEL", actorType, actorUserId, reasonText));
 
         if (!providerUnavailabilityRepository.existsOverlappingActiveBlock(
                 appointment.getProviderId(), appointment.getStartAt(), appointment.getEndAt())) {

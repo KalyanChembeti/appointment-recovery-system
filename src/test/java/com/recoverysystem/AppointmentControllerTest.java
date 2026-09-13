@@ -269,6 +269,29 @@ class AppointmentControllerTest {
     }
 
     @Test
+    void cancellationReasonTextReachesPersistedAuditThroughHttpEndpoint() throws Exception {
+        BookingFixture fixture = createFixture();
+        Appointment appointment = saveScheduledAppointment(
+                fixture, fixture.firstPatient(), fixture.startAt());
+        String reasonText = "Patient reported a schedule conflict";
+
+        performCancel(
+                        fixture.firstPatient(),
+                        appointment.getId(),
+                        "{\"reasonText\":\"" + reasonText + "\"}",
+                        true)
+                .andExpect(status().isOk());
+
+        AuditLog cancellationAudit = auditLogRepository.findAll().stream()
+                .filter(log -> "Appointment".equals(log.getEntityType()))
+                .filter(log -> appointment.getId().equals(log.getEntityId()))
+                .filter(log -> "CANCEL".equals(log.getAction()))
+                .findFirst()
+                .orElseThrow();
+        assertEquals(reasonText, cancellationAudit.getReason());
+    }
+
+    @Test
     void patientCannotCancelAnotherPatientsAppointment() throws Exception {
         BookingFixture fixture = createFixture();
         Appointment appointment = saveScheduledAppointment(

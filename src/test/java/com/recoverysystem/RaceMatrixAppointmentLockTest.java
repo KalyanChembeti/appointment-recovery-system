@@ -182,7 +182,8 @@ class RaceMatrixAppointmentLockTest {
             return appointmentCancellationService.cancelAppointment(
                     fixture.appointmentId(),
                     CancellationReason.STAFF_CANCELLED,
-                    fixture.actorUserId());
+                    fixture.actorUserId(),
+                    null);
         } catch (AppointmentNotScheduledException exception) {
             return exception;
         }

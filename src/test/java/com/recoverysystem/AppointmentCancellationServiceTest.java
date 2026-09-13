@@ -109,7 +109,10 @@ class AppointmentCancellationServiceTest {
         CancellationFixture fixture = createFixture(AppointmentStatus.SCHEDULED);
 
         Appointment result = appointmentCancellationService.cancelAppointment(
-                fixture.appointmentId(), CancellationReason.PATIENT_CANCELLED, fixture.patientId());
+                fixture.appointmentId(),
+                CancellationReason.PATIENT_CANCELLED,
+                fixture.patientId(),
+                null);
 
         assertEquals(AppointmentStatus.CANCELLED, result.getStatus());
         assertEquals(CancellationReason.PATIENT_CANCELLED, result.getCancellationReason());
@@ -126,6 +129,33 @@ class AppointmentCancellationServiceTest {
     }
 
     @Test
+    void nonNullReasonTextIsPersistedOnCancellationAudit() {
+        CancellationFixture fixture = createFixture(AppointmentStatus.SCHEDULED);
+        String reasonText = "Patient reported a schedule conflict";
+
+        appointmentCancellationService.cancelAppointment(
+                fixture.appointmentId(),
+                CancellationReason.PATIENT_CANCELLED,
+                fixture.patientId(),
+                reasonText);
+
+        assertEquals(reasonText, cancellationAuditFor(fixture.appointmentId()).getReason());
+    }
+
+    @Test
+    void nullReasonTextRemainsNullOnCancellationAudit() {
+        CancellationFixture fixture = createFixture(AppointmentStatus.SCHEDULED);
+
+        appointmentCancellationService.cancelAppointment(
+                fixture.appointmentId(),
+                CancellationReason.PATIENT_CANCELLED,
+                fixture.patientId(),
+                null);
+
+        assertNull(cancellationAuditFor(fixture.appointmentId()).getReason());
+    }
+
+    @Test
     void twoActiveEntriesAndOffersAreReconciledAndFullyAudited() {
         CancellationFixture fixture = createFixture(AppointmentStatus.SCHEDULED);
         WaitlistEntry firstEntry = saveWaitlistEntry(fixture, fixture.appointmentId());
@@ -134,7 +164,10 @@ class AppointmentCancellationServiceTest {
         SlotOffer secondOffer = saveSlotOffer(fixture, secondEntry.getId(), SlotOfferStatus.OFFERED);
 
         appointmentCancellationService.cancelAppointment(
-                fixture.appointmentId(), CancellationReason.STAFF_CANCELLED, fixture.patientId());
+                fixture.appointmentId(),
+                CancellationReason.STAFF_CANCELLED,
+                fixture.patientId(),
+                null);
 
         assertEquals(WaitlistEntryStatus.REMOVED, reloadedEntry(firstEntry).getStatus());
         assertEquals(WaitlistEntryStatus.REMOVED, reloadedEntry(secondEntry).getStatus());
@@ -170,7 +203,7 @@ class AppointmentCancellationServiceTest {
         Instant declinedUpdatedAt = declined.getUpdatedAt();
 
         appointmentCancellationService.cancelAppointment(
-                fixture.appointmentId(), CancellationReason.PATIENT_CANCELLED, null);
+                fixture.appointmentId(), CancellationReason.PATIENT_CANCELLED, null, null);
 
         assertEquals(WaitlistEntryStatus.REMOVED, reloadedEntry(offeredEntry).getStatus());
         assertEquals(WaitlistEntryStatus.REMOVED, reloadedEntry(declinedEntry).getStatus());
@@ -198,7 +231,7 @@ class AppointmentCancellationServiceTest {
         Instant otherUpdatedAt = otherEntry.getUpdatedAt();
 
         appointmentCancellationService.cancelAppointment(
-                cancelledFixture.appointmentId(), CancellationReason.STAFF_CANCELLED, null);
+                cancelledFixture.appointmentId(), CancellationReason.STAFF_CANCELLED, null, null);
 
         WaitlistEntry reloaded = reloadedEntry(otherEntry);
         assertEquals(WaitlistEntryStatus.ACTIVE, reloaded.getStatus());
@@ -217,7 +250,10 @@ class AppointmentCancellationServiceTest {
         saveBlock(fixture, ProviderUnavailabilityStatus.ACTIVE);
 
         appointmentCancellationService.cancelAppointment(
-                fixture.appointmentId(), CancellationReason.STAFF_CANCELLED, fixture.patientId());
+                fixture.appointmentId(),
+                CancellationReason.STAFF_CANCELLED,
+                fixture.patientId(),
+                null);
 
         assertEquals(AppointmentStatus.CANCELLED,
                 appointmentRepository.findById(fixture.appointmentId()).orElseThrow().getStatus());
@@ -239,7 +275,7 @@ class AppointmentCancellationServiceTest {
         saveBlock(fixture, ProviderUnavailabilityStatus.PENDING);
 
         appointmentCancellationService.cancelAppointment(
-                fixture.appointmentId(), CancellationReason.PATIENT_CANCELLED, null);
+                fixture.appointmentId(), CancellationReason.PATIENT_CANCELLED, null, null);
 
         assertEquals(RecoveryJobStatus.OPEN, recoveryJobFor(fixture.appointmentId()).getStatus());
         assertEquals(1, operationAudits(fixture.appointmentId(), List.of(), List.of()).stream()
@@ -261,7 +297,8 @@ class AppointmentCancellationServiceTest {
                 () -> appointmentCancellationService.cancelAppointment(
                         fixture.appointmentId(),
                         CancellationReason.STAFF_CANCELLED,
-                        fixture.patientId()));
+                        fixture.patientId(),
+                        null));
 
         Appointment reloaded = appointmentRepository.findById(fixture.appointmentId()).orElseThrow();
         assertEquals(AppointmentStatus.CANCELLED, reloaded.getStatus());
@@ -282,7 +319,7 @@ class AppointmentCancellationServiceTest {
         assertThrows(
                 InvalidCancellationReasonException.class,
                 () -> appointmentCancellationService.cancelAppointment(
-                        fixture.appointmentId(), CancellationReason.RESCHEDULED, null));
+                        fixture.appointmentId(), CancellationReason.RESCHEDULED, null, null));
 
         Appointment reloaded = appointmentRepository.findById(fixture.appointmentId()).orElseThrow();
         assertEquals(AppointmentStatus.SCHEDULED, reloaded.getStatus());
@@ -301,7 +338,7 @@ class AppointmentCancellationServiceTest {
         assertThrows(
                 AppointmentNotFoundException.class,
                 () -> appointmentCancellationService.cancelAppointment(
-                        Long.MAX_VALUE, CancellationReason.PATIENT_CANCELLED, null));
+                        Long.MAX_VALUE, CancellationReason.PATIENT_CANCELLED, null, null));
 
         assertEquals(auditCount, auditLogRepository.count());
         assertEquals(recoveryCount, recoveryJobRepository.count());
@@ -314,14 +351,17 @@ class AppointmentCancellationServiceTest {
         SlotOffer systemOffer =
                 saveSlotOffer(systemFixture, systemEntry.getId(), SlotOfferStatus.OFFERED);
         appointmentCancellationService.cancelAppointment(
-                systemFixture.appointmentId(), CancellationReason.PATIENT_CANCELLED, null);
+                systemFixture.appointmentId(), CancellationReason.PATIENT_CANCELLED, null, null);
 
         User actor = saveUser(UserRole.RECEPTIONIST);
         CancellationFixture userFixture = createFixture(AppointmentStatus.SCHEDULED);
         WaitlistEntry userEntry = saveWaitlistEntry(userFixture, userFixture.appointmentId());
         SlotOffer userOffer = saveSlotOffer(userFixture, userEntry.getId(), SlotOfferStatus.OFFERED);
         appointmentCancellationService.cancelAppointment(
-                userFixture.appointmentId(), CancellationReason.STAFF_CANCELLED, actor.getId());
+                userFixture.appointmentId(),
+                CancellationReason.STAFF_CANCELLED,
+                actor.getId(),
+                null);
 
         List<AuditLog> systemAudits = operationAudits(
                 systemFixture.appointmentId(),
@@ -348,9 +388,9 @@ class AppointmentCancellationServiceTest {
         CancellationFixture staffFixture = createFixture(AppointmentStatus.SCHEDULED);
 
         appointmentCancellationService.cancelAppointment(
-                patientFixture.appointmentId(), CancellationReason.PATIENT_CANCELLED, null);
+                patientFixture.appointmentId(), CancellationReason.PATIENT_CANCELLED, null, null);
         appointmentCancellationService.cancelAppointment(
-                staffFixture.appointmentId(), CancellationReason.STAFF_CANCELLED, null);
+                staffFixture.appointmentId(), CancellationReason.STAFF_CANCELLED, null, null);
 
         assertEquals(
                 CancellationReason.PATIENT_CANCELLED,
@@ -545,6 +585,15 @@ class AppointmentCancellationServiceTest {
                 .filter(log -> entityId.equals(log.getEntityId()))
                 .filter(log -> action.equals(log.getAction()))
                 .count();
+    }
+
+    private AuditLog cancellationAuditFor(Long appointmentId) {
+        return auditLogRepository.findAll().stream()
+                .filter(log -> "Appointment".equals(log.getEntityType()))
+                .filter(log -> appointmentId.equals(log.getEntityId()))
+                .filter(log -> "CANCEL".equals(log.getAction()))
+                .findFirst()
+                .orElseThrow();
     }
 
     private static String uniqueValue(String prefix) {

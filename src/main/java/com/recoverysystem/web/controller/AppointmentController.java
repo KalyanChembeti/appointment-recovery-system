@@ -72,9 +72,11 @@ public class AppointmentController {
         verifyPatientOwnership(targetAppointment, authenticatedUser);
 
         CancellationReason cancellationReason = cancellationReasonFor(authenticatedUser);
-        // reasonText has no destination in the current cancellation service signature.
         Appointment appointment = appointmentCancellationService.cancelAppointment(
-                id, cancellationReason, authenticatedUser.getUserId());
+                id,
+                cancellationReason,
+                authenticatedUser.getUserId(),
+                request.reasonText());
         return ResponseEntity.ok(AppointmentResponse.from(appointment));
     }
 
