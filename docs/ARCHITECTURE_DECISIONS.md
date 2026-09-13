@@ -577,3 +577,13 @@ creating managed entities and eliminate this identity-map failure mode structura
 broader repository refactor is tracked in `docs/DEFERRED_FOLLOWUPS.md`; this change uses
 explicit `EntityManager.detach(...)` calls to correct the existing workflows without
 changing their queries, lock order, validation order, or exceptions.
+
+## 25. Use camelCase for REST JSON fields
+
+**Decision.** REST JSON naming convention is camelCase.
+
+**Reason.** This matches Java/Jackson defaults and the eventual React/TypeScript frontend
+without extra configuration. The original high-level specification's snake_case examples
+were explicitly labeled "Refined in Phase 0" and were never a binding wire contract.
+
+**Where implemented.** All request/response DTOs from Step 8 onward.
