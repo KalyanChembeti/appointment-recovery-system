@@ -302,6 +302,10 @@ class DirectBookingServiceTest {
         LocalDate date = LocalDate.of(2032, 10, 14);
         BookingFixture fixture = createFixture(date);
         Instant startAt = atClinicTime(date, 12, 0);
+        long auditMarker = auditLogRepository.findAll().stream()
+                .mapToLong(AuditLog::getId)
+                .max()
+                .orElse(0L);
         ConcurrentRaceHarness.RaceResult<Object> raceResult = ConcurrentRaceHarness.race(
                 () -> attemptBooking(fixture.firstPatientId(), fixture, startAt),
                 () -> attemptBooking(fixture.secondPatientId(), fixture, startAt),
@@ -315,6 +319,47 @@ class DirectBookingServiceTest {
                 outcome instanceof Appointment || outcome instanceof ProviderDoubleBookedException,
                 () -> "Unexpected concurrent booking outcome: " + outcome));
         assertEquals(1, appointmentCountForProvider(fixture.providerId()));
+
+        Appointment winningAppointment = outcomes.stream()
+                .filter(Appointment.class::isInstance)
+                .map(Appointment.class::cast)
+                .findFirst()
+                .orElseThrow();
+        Appointment savedWinningAppointment = appointmentRepository
+                .findById(winningAppointment.getId())
+                .orElseThrow();
+        assertEquals(AppointmentStatus.SCHEDULED, savedWinningAppointment.getStatus());
+        assertEquals(fixture.providerId(), savedWinningAppointment.getProviderId());
+        assertEquals(startAt, savedWinningAppointment.getStartAt());
+        assertEquals(startAt.plus(Duration.ofHours(1)), savedWinningAppointment.getEndAt());
+        assertEquals(fixture.appointmentTypeId(), savedWinningAppointment.getAppointmentTypeId());
+        assertTrue(List.of(fixture.firstPatientId(), fixture.secondPatientId())
+                .contains(savedWinningAppointment.getPatientId()));
+
+        List<AuditLog> raceAppointmentAudits = auditLogRepository.findAll().stream()
+                .filter(audit -> audit.getId() > auditMarker)
+                .filter(audit -> "Appointment".equals(audit.getEntityType()))
+                .toList();
+        assertEquals(
+                1,
+                raceAppointmentAudits.stream()
+                        .filter(audit -> winningAppointment.getId().equals(audit.getEntityId()))
+                        .filter(audit -> "CREATE".equals(audit.getAction()))
+                        .count());
+        // This proves the losing transaction rolled back completely rather than merely throwing:
+        // it left no orphaned or partial Appointment audit row behind.
+        assertEquals(
+                0,
+                raceAppointmentAudits.stream()
+                        .filter(audit -> !winningAppointment.getId().equals(audit.getEntityId()))
+                        .count());
+
+        String winningPatient = savedWinningAppointment.getPatientId()
+                        .equals(fixture.firstPatientId())
+                ? "firstPatientId"
+                : "secondPatientId";
+        System.out.println("Same-provider booking winner: " + winningPatient
+                + " (id=" + savedWinningAppointment.getPatientId() + ")");
     }
 
     private void assertBlockingUnavailabilityRejectsBooking(ProviderUnavailabilityStatus status) {

@@ -91,6 +91,21 @@ transactions at the same time. Add true concurrent PostgreSQL Testcontainers cov
     `OfferAcceptancePatientConflictCleanup`;
 15. complete final-row and audit assertions for the existing same-Provider booking race.
 
+**RM-04 outcome coverage note.** Outcomes (a)/(b), where
+`OfferAcceptancePatientConflictCleanup` runs after the reactive patient
+exclusion-constraint path under genuine two-sided concurrent contention, were not observed
+across eight real concurrent runs or the subsequent manual restoration check. The cleanup
+mechanism itself is proven by its existing sequential test and remains represented as a
+reachable legal outcome in `RaceMatrixOfferAcceptanceTest`, which accepts both exception
+types and both cancellation reasons. Diagnostic timing explained the natural distribution:
+Category D proactive discovery ran before either side's Appointment INSERT and structurally
+dominated any one-sided timing variation. Delaying one side would only change which side's
+Category D cleanup wins; it would not expose the reactive constraint path. Forcing outcomes
+(a)/(b) would require a symmetric two-sided barrier across both transactions'
+discovery-to-lock windows, a qualitatively different technique from the one-sided delays and
+spies used elsewhere in this phase. That technique was not attempted because the cleanup
+mechanism is already established independently.
+
 RM-09 and RM-10 use the corrected Correction 6 rule that PENDING blocks stop both direct
 bookings and W12 offer creation. RM-09 begins with a PENDING block, and RM-10 races booking
 against block creation because booking against a pre-existing PENDING block is not a
