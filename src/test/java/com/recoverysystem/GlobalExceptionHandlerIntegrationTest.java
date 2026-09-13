@@ -17,6 +17,7 @@ import com.recoverysystem.domain.enums.SlotOfferStatus;
 import com.recoverysystem.domain.enums.UserRole;
 import com.recoverysystem.domain.enums.WaitlistEntryStatus;
 import com.recoverysystem.exception.AppointmentNotFoundException;
+import com.recoverysystem.exception.AppointmentOwnershipException;
 import com.recoverysystem.exception.AppointmentNotScheduledException;
 import com.recoverysystem.exception.AppointmentNotYetStartedException;
 import com.recoverysystem.exception.AppointmentTypeNotFoundException;
@@ -163,6 +164,8 @@ class GlobalExceptionHandlerIntegrationTest {
         return Stream.of(
                 arguments("APPOINTMENT_NOT_FOUND", HttpStatus.NOT_FOUND,
                         "Appointment not found: 1"),
+                arguments("APPOINTMENT_OWNERSHIP", HttpStatus.FORBIDDEN,
+                        "Appointment belongs to patient 2, not patient 1"),
                 arguments("APPOINTMENT_NOT_SCHEDULED", HttpStatus.CONFLICT,
                         "Appointment 1 must be SCHEDULED but was CANCELLED"),
                 arguments("APPOINTMENT_NOT_YET_STARTED", HttpStatus.CONFLICT,
@@ -256,6 +259,8 @@ class GlobalExceptionHandlerIntegrationTest {
                 String exceptionCode, SlotOfferStatus actualStatus) {
             return switch (exceptionCode) {
                 case "APPOINTMENT_NOT_FOUND" -> new AppointmentNotFoundException(1L);
+                case "APPOINTMENT_OWNERSHIP" ->
+                        new AppointmentOwnershipException(1L, 2L);
                 case "APPOINTMENT_NOT_SCHEDULED" ->
                         new AppointmentNotScheduledException(1L, AppointmentStatus.CANCELLED);
                 case "APPOINTMENT_NOT_YET_STARTED" ->

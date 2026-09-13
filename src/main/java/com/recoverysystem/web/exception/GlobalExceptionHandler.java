@@ -4,6 +4,7 @@ import com.recoverysystem.domain.enums.SlotOfferStatus;
 import com.recoverysystem.exception.AppointmentNotFoundException;
 import com.recoverysystem.exception.AppointmentNotScheduledException;
 import com.recoverysystem.exception.AppointmentNotYetStartedException;
+import com.recoverysystem.exception.AppointmentOwnershipException;
 import com.recoverysystem.exception.AppointmentTypeNotFoundException;
 import com.recoverysystem.exception.AppointmentTypeSpecialtyMismatchException;
 import com.recoverysystem.exception.DuplicateEmailException;
@@ -268,6 +269,12 @@ public class GlobalExceptionHandler {
     ResponseEntity<ApiErrorResponse> handleOfferAcceptanceOwnership(
             OfferAcceptanceOwnershipException exception, HttpServletRequest request) {
         return error(HttpStatus.FORBIDDEN, "OFFER_ACCEPTANCE_OWNERSHIP", exception, request);
+    }
+
+    @ExceptionHandler(AppointmentOwnershipException.class)
+    ResponseEntity<ApiErrorResponse> handleAppointmentOwnership(
+            AppointmentOwnershipException exception, HttpServletRequest request) {
+        return error(HttpStatus.FORBIDDEN, "APPOINTMENT_OWNERSHIP", exception, request);
     }
 
     @ExceptionHandler(WaitlistAnchorOwnershipException.class)

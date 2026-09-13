@@ -1,5 +1,6 @@
 package com.recoverysystem.web.security;
 
+import com.recoverysystem.exception.AppointmentOwnershipException;
 import com.recoverysystem.exception.MissingPatientIdException;
 import com.recoverysystem.exception.PatientIdentityMismatchException;
 import com.recoverysystem.exception.ProviderActionNotPermittedException;
@@ -15,6 +16,12 @@ public class EffectivePatientIdResolver {
             case RECEPTIONIST, ADMIN -> resolveStaffPatientIdentity(requestedPatientId, caller);
             case PROVIDER -> throw new ProviderActionNotPermittedException(caller.getRole());
         };
+    }
+
+    public void verifyOwnership(Long effectivePatientId, Long actualPatientId) {
+        if (!effectivePatientId.equals(actualPatientId)) {
+            throw new AppointmentOwnershipException(effectivePatientId, actualPatientId);
+        }
     }
 
     private Long resolvePatientIdentity(

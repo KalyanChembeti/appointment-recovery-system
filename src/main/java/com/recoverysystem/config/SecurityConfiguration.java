@@ -16,11 +16,12 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.HttpStatusEntryPoint;
 import org.springframework.security.web.authentication.session.ChangeSessionIdAuthenticationStrategy;
-import org.springframework.security.web.util.matcher.AntPathRequestMatcher;
 import org.springframework.security.web.authentication.session.SessionAuthenticationStrategy;
 import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
 import org.springframework.security.web.context.HttpSessionSecurityContextRepository;
 import org.springframework.security.web.context.SecurityContextRepository;
+import org.springframework.security.web.util.matcher.AntPathRequestMatcher;
+import org.springframework.security.web.util.matcher.OrRequestMatcher;
 
 @Configuration
 public class SecurityConfiguration {
@@ -70,13 +71,24 @@ public class SecurityConfiguration {
                         // remains deliberate for paths awaiting their own controller stage.
                         .requestMatchers(HttpMethod.POST, "/api/appointments")
                         .hasAnyRole("PATIENT", "RECEPTIONIST", "ADMIN")
+                        .requestMatchers(
+                                HttpMethod.POST,
+                                "/api/appointments/{id}/cancel",
+                                "/api/appointments/{id}/reschedule")
+                        .hasAnyRole("PATIENT", "RECEPTIONIST", "ADMIN")
                         .anyRequest().permitAll())
                 .exceptionHandling(exceptions -> exceptions
                         .authenticationEntryPoint(
                                 new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED))
                         .defaultAccessDeniedHandlerFor(
                                 appointmentAccessDeniedHandler,
-                                new AntPathRequestMatcher("/api/appointments", "POST")));
+                                new OrRequestMatcher(
+                                        new AntPathRequestMatcher(
+                                                "/api/appointments", "POST"),
+                                        new AntPathRequestMatcher(
+                                                "/api/appointments/*/cancel", "POST"),
+                                        new AntPathRequestMatcher(
+                                                "/api/appointments/*/reschedule", "POST"))));
 
         return http.build();
     }

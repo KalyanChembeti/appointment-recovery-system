@@ -1,6 +1,7 @@
 package com.recoverysystem;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
@@ -18,6 +19,7 @@ import com.recoverysystem.domain.entity.Specialty;
 import com.recoverysystem.domain.entity.User;
 import com.recoverysystem.domain.enums.ActorType;
 import com.recoverysystem.domain.enums.AppointmentStatus;
+import com.recoverysystem.domain.enums.CancellationReason;
 import com.recoverysystem.domain.enums.UserRole;
 import com.recoverysystem.exception.ProviderActionNotPermittedException;
 import com.recoverysystem.repository.AppointmentRepository;
@@ -30,6 +32,7 @@ import com.recoverysystem.repository.UserRepository;
 import com.recoverysystem.security.AuthenticatedUser;
 import com.recoverysystem.service.DirectBookingService;
 import com.recoverysystem.web.dto.BookAppointmentRequest;
+import com.recoverysystem.web.dto.RescheduleAppointmentRequest;
 import com.recoverysystem.web.security.EffectivePatientIdResolver;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -47,6 +50,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.ResultActions;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
@@ -248,6 +252,194 @@ class AppointmentControllerTest {
         assertEquals(1L, appointmentRepository.count());
     }
 
+    @Test
+    void patientCanCancelOwnAppointmentWithoutReasonText() throws Exception {
+        BookingFixture fixture = createFixture();
+        Appointment appointment = saveScheduledAppointment(
+                fixture, fixture.firstPatient(), fixture.startAt());
+
+        performCancel(fixture.firstPatient(), appointment.getId(), "{}", true)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(appointment.getId()))
+                .andExpect(jsonPath("$.status").value(AppointmentStatus.CANCELLED.name()));
+
+        Appointment persisted = appointmentRepository.findById(appointment.getId()).orElseThrow();
+        assertEquals(AppointmentStatus.CANCELLED, persisted.getStatus());
+        assertEquals(CancellationReason.PATIENT_CANCELLED, persisted.getCancellationReason());
+    }
+
+    @Test
+    void patientCannotCancelAnotherPatientsAppointment() throws Exception {
+        BookingFixture fixture = createFixture();
+        Appointment appointment = saveScheduledAppointment(
+                fixture, fixture.secondPatient(), fixture.startAt());
+
+        performCancel(fixture.firstPatient(), appointment.getId(), "{}", true)
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("APPOINTMENT_OWNERSHIP"));
+
+        Appointment persisted = appointmentRepository.findById(appointment.getId()).orElseThrow();
+        assertEquals(AppointmentStatus.SCHEDULED, persisted.getStatus());
+        assertNull(persisted.getCancellationReason());
+    }
+
+    @Test
+    void receptionistCanCancelAnyPatientsAppointment() throws Exception {
+        BookingFixture fixture = createFixture();
+        Appointment appointment = saveScheduledAppointment(
+                fixture, fixture.firstPatient(), fixture.startAt());
+        User receptionist = saveUser(UserRole.RECEPTIONIST, "Receptionist");
+
+        performCancel(receptionist, appointment.getId(), "{}", true)
+                .andExpect(status().isOk());
+
+        Appointment persisted = appointmentRepository.findById(appointment.getId()).orElseThrow();
+        assertEquals(AppointmentStatus.CANCELLED, persisted.getStatus());
+        assertEquals(CancellationReason.STAFF_CANCELLED, persisted.getCancellationReason());
+    }
+
+    @Test
+    void patientCannotSmuggleCancellationReasonThroughRequestBody() throws Exception {
+        BookingFixture fixture = createFixture();
+        Appointment appointment = saveScheduledAppointment(
+                fixture, fixture.firstPatient(), fixture.startAt());
+
+        performCancel(
+                        fixture.firstPatient(),
+                        appointment.getId(),
+                        "{\"cancellationReason\":\"RESCHEDULED\"}",
+                        true)
+                .andExpect(status().isOk());
+
+        Appointment persisted = appointmentRepository.findById(appointment.getId()).orElseThrow();
+        assertEquals(CancellationReason.PATIENT_CANCELLED, persisted.getCancellationReason());
+    }
+
+    @Test
+    void patientCanRescheduleOwnAppointment() throws Exception {
+        BookingFixture fixture = createFixture();
+        Appointment oldAppointment = saveScheduledAppointment(
+                fixture, fixture.firstPatient(), fixture.startAt());
+        Instant newStartAt = fixture.startAt().plusSeconds(7_200);
+
+        MvcResult result = performReschedule(
+                        fixture.firstPatient(), oldAppointment.getId(), fixture, newStartAt, true)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.patientId").value(fixture.firstPatient().getId()))
+                .andExpect(jsonPath("$.providerId").value(fixture.provider().getId()))
+                .andExpect(jsonPath("$.appointmentTypeId")
+                        .value(fixture.appointmentType().getId()))
+                .andExpect(jsonPath("$.startAt").value(newStartAt.toString()))
+                .andReturn();
+
+        Long newAppointmentId = responseAppointmentId(result);
+        Appointment persisted = appointmentRepository.findById(newAppointmentId).orElseThrow();
+        assertEquals(fixture.firstPatient().getId(), persisted.getPatientId());
+        assertEquals(fixture.provider().getId(), persisted.getProviderId());
+        assertEquals(fixture.appointmentType().getId(), persisted.getAppointmentTypeId());
+        assertEquals(newStartAt, persisted.getStartAt());
+        assertEquals(newStartAt.plusSeconds(3_600), persisted.getEndAt());
+        assertEquals(AppointmentStatus.SCHEDULED, persisted.getStatus());
+    }
+
+    @Test
+    void patientCannotRescheduleAnotherPatientsAppointment() throws Exception {
+        BookingFixture fixture = createFixture();
+        Appointment oldAppointment = saveScheduledAppointment(
+                fixture, fixture.secondPatient(), fixture.startAt());
+
+        performReschedule(
+                        fixture.firstPatient(),
+                        oldAppointment.getId(),
+                        fixture,
+                        fixture.startAt().plusSeconds(7_200),
+                        true)
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("APPOINTMENT_OWNERSHIP"));
+
+        assertEquals(1L, appointmentRepository.count());
+        Appointment persisted = appointmentRepository.findById(oldAppointment.getId())
+                .orElseThrow();
+        assertEquals(AppointmentStatus.SCHEDULED, persisted.getStatus());
+        assertNull(persisted.getReplacedByAppointmentId());
+    }
+
+    @Test
+    void receptionistCanRescheduleAnyPatientsAppointment() throws Exception {
+        BookingFixture fixture = createFixture();
+        Appointment oldAppointment = saveScheduledAppointment(
+                fixture, fixture.firstPatient(), fixture.startAt());
+        User receptionist = saveUser(UserRole.RECEPTIONIST, "Receptionist");
+        Instant newStartAt = fixture.startAt().plusSeconds(7_200);
+
+        MvcResult result = performReschedule(
+                        receptionist, oldAppointment.getId(), fixture, newStartAt, true)
+                .andExpect(status().isOk())
+                .andReturn();
+
+        Appointment persisted = appointmentRepository.findById(responseAppointmentId(result))
+                .orElseThrow();
+        assertEquals(fixture.firstPatient().getId(), persisted.getPatientId());
+        assertEquals(fixture.provider().getId(), persisted.getProviderId());
+        assertEquals(newStartAt, persisted.getStartAt());
+    }
+
+    @Test
+    void providerCannotCancelOrRescheduleAppointments() throws Exception {
+        BookingFixture fixture = createFixture();
+        Appointment appointment = saveScheduledAppointment(
+                fixture, fixture.firstPatient(), fixture.startAt());
+        User provider = fixture.providerUser();
+
+        performCancel(provider, appointment.getId(), "{}", true)
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("PROVIDER_ACTION_NOT_PERMITTED"));
+        performReschedule(
+                        provider,
+                        appointment.getId(),
+                        fixture,
+                        fixture.startAt().plusSeconds(7_200),
+                        true)
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("PROVIDER_ACTION_NOT_PERMITTED"));
+    }
+
+    @Test
+    void unauthenticatedCancellationAndReschedulingAreUnauthorized() throws Exception {
+        BookingFixture fixture = createFixture();
+        Appointment appointment = saveScheduledAppointment(
+                fixture, fixture.firstPatient(), fixture.startAt());
+
+        mockMvc.perform(post("/api/appointments/{id}/cancel", appointment.getId())
+                        .with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{}"))
+                .andExpect(status().isUnauthorized());
+        mockMvc.perform(post("/api/appointments/{id}/reschedule", appointment.getId())
+                        .with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(rescheduleRequestJson(
+                                fixture, fixture.startAt().plusSeconds(7_200))))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void cancellationAndReschedulingWithoutCsrfAreForbidden() throws Exception {
+        BookingFixture fixture = createFixture();
+        Appointment appointment = saveScheduledAppointment(
+                fixture, fixture.firstPatient(), fixture.startAt());
+
+        performCancel(fixture.firstPatient(), appointment.getId(), "{}", false)
+                .andExpect(status().isForbidden());
+        performReschedule(
+                        fixture.firstPatient(),
+                        appointment.getId(),
+                        fixture,
+                        fixture.startAt().plusSeconds(7_200),
+                        false)
+                .andExpect(status().isForbidden());
+    }
+
     private ResultActions performBooking(
             User caller,
             Long requestedPatientId,
@@ -263,12 +455,69 @@ class AppointmentControllerTest {
         return mockMvc.perform(request);
     }
 
+    private ResultActions performCancel(
+            User caller,
+            Long appointmentId,
+            String requestBody,
+            boolean includeCsrf) throws Exception {
+        var request = post("/api/appointments/{id}/cancel", appointmentId)
+                .with(user(new AuthenticatedUser(caller)))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(requestBody);
+        if (includeCsrf) {
+            request.with(csrf());
+        }
+        return mockMvc.perform(request);
+    }
+
+    private ResultActions performReschedule(
+            User caller,
+            Long appointmentId,
+            BookingFixture fixture,
+            Instant newStartAt,
+            boolean includeCsrf) throws Exception {
+        var request = post("/api/appointments/{id}/reschedule", appointmentId)
+                .with(user(new AuthenticatedUser(caller)))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(rescheduleRequestJson(fixture, newStartAt));
+        if (includeCsrf) {
+            request.with(csrf());
+        }
+        return mockMvc.perform(request);
+    }
+
     private String requestJson(Long requestedPatientId, BookingFixture fixture) throws Exception {
         return objectMapper.writeValueAsString(new BookAppointmentRequest(
                 requestedPatientId,
                 fixture.provider().getId(),
                 fixture.appointmentType().getId(),
                 fixture.startAt()));
+    }
+
+    private String rescheduleRequestJson(BookingFixture fixture, Instant newStartAt)
+            throws Exception {
+        return objectMapper.writeValueAsString(new RescheduleAppointmentRequest(
+                fixture.provider().getId(),
+                fixture.appointmentType().getId(),
+                newStartAt));
+    }
+
+    private Long responseAppointmentId(MvcResult result) throws Exception {
+        return objectMapper.readTree(result.getResponse().getContentAsByteArray())
+                .get("id")
+                .longValue();
+    }
+
+    private Appointment saveScheduledAppointment(
+            BookingFixture fixture, User patient, Instant startAt) {
+        Appointment appointment = new Appointment();
+        appointment.setPatientId(patient.getId());
+        appointment.setProviderId(fixture.provider().getId());
+        appointment.setAppointmentTypeId(fixture.appointmentType().getId());
+        appointment.setStartAt(startAt);
+        appointment.setEndAt(startAt.plusSeconds(3_600));
+        appointment.setStatus(AppointmentStatus.SCHEDULED);
+        return appointmentRepository.saveAndFlush(appointment);
     }
 
     private BookingFixture createFixture() {
