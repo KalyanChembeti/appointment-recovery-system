@@ -137,6 +137,14 @@ central exception-to-HTTP mapping that distinguishes the actual classes listed i
 `WORKFLOW_IMPLEMENTATION_GUIDE.md`, including conflict, missing-row, expired-offer, and
 validation outcomes. Add controller/security tests after endpoint contracts are fixed.
 
+**Error-response compatibility note.** `BadCredentialsException` and
+`MethodArgumentNotValidException` are the only two error responses in the API that do not
+carry a `code` field in `GlobalExceptionHandler`. Their exact pre-existing response shapes
+from `AuthController`, before consolidation, were preserved verbatim rather than reshaped
+to match `ApiErrorResponse`'s four-field contract, avoiding an unnecessary regression in
+already-passing tests. A future frontend consuming this API must special-case these two
+response shapes rather than assume every error carries a `code` field.
+
 Actor IDs and patient IDs that come from authenticated identity must not be accepted as
 freely forgeable request fields. W5, W7, W11, and W13A need particular care because their
 service signatures assume a required human actor but do not all perform explicit null or
