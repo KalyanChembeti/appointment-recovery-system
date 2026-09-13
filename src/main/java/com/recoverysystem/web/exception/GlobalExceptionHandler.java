@@ -10,12 +10,15 @@ import com.recoverysystem.exception.DuplicateEmailException;
 import com.recoverysystem.exception.InvalidBlockIntervalException;
 import com.recoverysystem.exception.InvalidCancellationReasonException;
 import com.recoverysystem.exception.InvalidWaitlistDateRangeException;
+import com.recoverysystem.exception.MissingPatientIdException;
 import com.recoverysystem.exception.OfferAcceptanceOwnershipException;
 import com.recoverysystem.exception.OfferAlreadyAcceptedException;
 import com.recoverysystem.exception.OfferAlreadyResolvedException;
 import com.recoverysystem.exception.OfferExpiredException;
 import com.recoverysystem.exception.PatientDoubleBookedException;
+import com.recoverysystem.exception.PatientIdentityMismatchException;
 import com.recoverysystem.exception.PreferredProviderSpecialtyMismatchException;
+import com.recoverysystem.exception.ProviderActionNotPermittedException;
 import com.recoverysystem.exception.ProviderBlockConflictsUnresolvedException;
 import com.recoverysystem.exception.ProviderBlockNotPendingException;
 import com.recoverysystem.exception.ProviderDoubleBookedException;
@@ -255,6 +258,12 @@ public class GlobalExceptionHandler {
                 request);
     }
 
+    @ExceptionHandler(MissingPatientIdException.class)
+    ResponseEntity<ApiErrorResponse> handleMissingPatientId(
+            MissingPatientIdException exception, HttpServletRequest request) {
+        return error(HttpStatus.BAD_REQUEST, "MISSING_PATIENT_ID", exception, request);
+    }
+
     @ExceptionHandler(OfferAcceptanceOwnershipException.class)
     ResponseEntity<ApiErrorResponse> handleOfferAcceptanceOwnership(
             OfferAcceptanceOwnershipException exception, HttpServletRequest request) {
@@ -265,6 +274,22 @@ public class GlobalExceptionHandler {
     ResponseEntity<ApiErrorResponse> handleWaitlistAnchorOwnership(
             WaitlistAnchorOwnershipException exception, HttpServletRequest request) {
         return error(HttpStatus.FORBIDDEN, "WAITLIST_ANCHOR_OWNERSHIP", exception, request);
+    }
+
+    @ExceptionHandler(PatientIdentityMismatchException.class)
+    ResponseEntity<ApiErrorResponse> handlePatientIdentityMismatch(
+            PatientIdentityMismatchException exception, HttpServletRequest request) {
+        return error(HttpStatus.FORBIDDEN, "PATIENT_IDENTITY_MISMATCH", exception, request);
+    }
+
+    @ExceptionHandler(ProviderActionNotPermittedException.class)
+    ResponseEntity<ApiErrorResponse> handleProviderActionNotPermitted(
+            ProviderActionNotPermittedException exception, HttpServletRequest request) {
+        return error(
+                HttpStatus.FORBIDDEN,
+                "PROVIDER_ACTION_NOT_PERMITTED",
+                exception,
+                request);
     }
 
     @ExceptionHandler(SiblingAlreadyFulfilledException.class)

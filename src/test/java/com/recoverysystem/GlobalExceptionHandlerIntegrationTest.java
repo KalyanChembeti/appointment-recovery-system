@@ -14,6 +14,7 @@ import com.recoverysystem.domain.enums.CancellationReason;
 import com.recoverysystem.domain.enums.ProviderUnavailabilityStatus;
 import com.recoverysystem.domain.enums.RecoveryJobStatus;
 import com.recoverysystem.domain.enums.SlotOfferStatus;
+import com.recoverysystem.domain.enums.UserRole;
 import com.recoverysystem.domain.enums.WaitlistEntryStatus;
 import com.recoverysystem.exception.AppointmentNotFoundException;
 import com.recoverysystem.exception.AppointmentNotScheduledException;
@@ -24,12 +25,15 @@ import com.recoverysystem.exception.DuplicateEmailException;
 import com.recoverysystem.exception.InvalidBlockIntervalException;
 import com.recoverysystem.exception.InvalidCancellationReasonException;
 import com.recoverysystem.exception.InvalidWaitlistDateRangeException;
+import com.recoverysystem.exception.MissingPatientIdException;
 import com.recoverysystem.exception.OfferAcceptanceOwnershipException;
 import com.recoverysystem.exception.OfferAlreadyAcceptedException;
 import com.recoverysystem.exception.OfferAlreadyResolvedException;
 import com.recoverysystem.exception.OfferExpiredException;
 import com.recoverysystem.exception.PatientDoubleBookedException;
+import com.recoverysystem.exception.PatientIdentityMismatchException;
 import com.recoverysystem.exception.PreferredProviderSpecialtyMismatchException;
+import com.recoverysystem.exception.ProviderActionNotPermittedException;
 import com.recoverysystem.exception.ProviderBlockConflictsUnresolvedException;
 import com.recoverysystem.exception.ProviderBlockNotPendingException;
 import com.recoverysystem.exception.ProviderDoubleBookedException;
@@ -176,6 +180,8 @@ class GlobalExceptionHandlerIntegrationTest {
                         "Appointment 1 cannot be normally cancelled with reason RESCHEDULED"),
                 arguments("INVALID_WAITLIST_DATE_RANGE", HttpStatus.BAD_REQUEST,
                         "Waitlist earliest date 2030-01-02 must not be after latest date 2030-01-01"),
+                arguments("MISSING_PATIENT_ID", HttpStatus.BAD_REQUEST,
+                        "Patient ID is required when acting as RECEPTIONIST"),
                 arguments("OFFER_ACCEPTANCE_OWNERSHIP", HttpStatus.FORBIDDEN,
                         "Slot offer 1 belongs to patient 3, not patient 2"),
                 arguments("OFFER_ALREADY_ACCEPTED", HttpStatus.CONFLICT,
@@ -185,8 +191,12 @@ class GlobalExceptionHandlerIntegrationTest {
                 arguments("OFFER_EXPIRED", HttpStatus.GONE, "Slot offer 1 has expired"),
                 arguments("PATIENT_DOUBLE_BOOKED", HttpStatus.CONFLICT,
                         "The patient already has a scheduled appointment during the requested interval"),
+                arguments("PATIENT_IDENTITY_MISMATCH", HttpStatus.FORBIDDEN,
+                        "Requested patient 2 does not match authenticated patient 1"),
                 arguments("PREFERRED_PROVIDER_SPECIALTY_MISMATCH", HttpStatus.BAD_REQUEST,
                         "Preferred provider 1 has specialty 2, which does not match appointment type 3 specialty 4"),
+                arguments("PROVIDER_ACTION_NOT_PERMITTED", HttpStatus.FORBIDDEN,
+                        "Role PROVIDER is not permitted to perform patient actions"),
                 arguments("PROVIDER_BLOCK_CONFLICTS_UNRESOLVED", HttpStatus.CONFLICT,
                         "Provider unavailability 1 for provider 2 still conflicts with appointments [3, 4]"),
                 arguments("PROVIDER_BLOCK_NOT_PENDING", HttpStatus.CONFLICT,
@@ -260,6 +270,8 @@ class GlobalExceptionHandlerIntegrationTest {
                         new InvalidCancellationReasonException(1L, CancellationReason.RESCHEDULED);
                 case "INVALID_WAITLIST_DATE_RANGE" -> new InvalidWaitlistDateRangeException(
                         LocalDate.of(2030, 1, 2), LocalDate.of(2030, 1, 1));
+                case "MISSING_PATIENT_ID" ->
+                        new MissingPatientIdException(UserRole.RECEPTIONIST);
                 case "OFFER_ACCEPTANCE_OWNERSHIP" ->
                         new OfferAcceptanceOwnershipException(1L, 2L, 3L);
                 case "OFFER_ALREADY_ACCEPTED" -> new OfferAlreadyAcceptedException(1L);
@@ -268,8 +280,12 @@ class GlobalExceptionHandlerIntegrationTest {
                 case "OFFER_EXPIRED" -> new OfferExpiredException(1L);
                 case "PATIENT_DOUBLE_BOOKED" ->
                         new PatientDoubleBookedException(new RuntimeException("constraint detail"));
+                case "PATIENT_IDENTITY_MISMATCH" ->
+                        new PatientIdentityMismatchException(2L, 1L);
                 case "PREFERRED_PROVIDER_SPECIALTY_MISMATCH" ->
                         new PreferredProviderSpecialtyMismatchException(1L, 2L, 3L, 4L);
+                case "PROVIDER_ACTION_NOT_PERMITTED" ->
+                        new ProviderActionNotPermittedException(UserRole.PROVIDER);
                 case "PROVIDER_BLOCK_CONFLICTS_UNRESOLVED" ->
                         new ProviderBlockConflictsUnresolvedException(1L, 2L, List.of(3L, 4L));
                 case "PROVIDER_BLOCK_NOT_PENDING" ->
