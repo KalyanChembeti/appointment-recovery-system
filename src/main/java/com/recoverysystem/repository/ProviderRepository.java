@@ -11,6 +11,8 @@ import org.springframework.data.repository.query.Param;
 
 public interface ProviderRepository extends JpaRepository<Provider, Long> {
 
+    Optional<Provider> findByUserId(Long userId);
+
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT p FROM Provider p WHERE p.id = :id")
     Optional<Provider> findByIdForUpdate(@Param("id") Long id);

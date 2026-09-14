@@ -1,10 +1,13 @@
 package com.recoverysystem;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -32,6 +35,7 @@ import com.recoverysystem.repository.SpecialtyRepository;
 import com.recoverysystem.repository.UserRepository;
 import com.recoverysystem.security.AuthenticatedUser;
 import com.recoverysystem.service.DirectBookingService;
+import com.recoverysystem.web.dto.AppointmentResponse;
 import com.recoverysystem.web.dto.BookAppointmentRequest;
 import com.recoverysystem.web.dto.RescheduleAppointmentRequest;
 import com.recoverysystem.web.security.EffectivePatientIdResolver;
@@ -40,6 +44,7 @@ import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.ZoneId;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -590,6 +595,195 @@ class AppointmentControllerTest {
                 .andExpect(jsonPath("$.code").value("APPOINTMENT_NOT_SCHEDULED"));
     }
 
+    @Test
+    void patientListContainsOnlyTheirOwnAppointments() throws Exception {
+        BookingFixture firstFixture = createFixture();
+        BookingFixture secondFixture = createFixture();
+        User caller = firstFixture.firstPatient();
+        Appointment firstOwnAppointment = saveScheduledAppointment(
+                firstFixture, caller, firstFixture.startAt());
+        Appointment secondOwnAppointment = saveScheduledAppointment(
+                secondFixture, caller, secondFixture.startAt());
+        Appointment otherPatientsAppointment = saveScheduledAppointment(
+                secondFixture,
+                secondFixture.secondPatient(),
+                secondFixture.startAt().plusSeconds(7_200));
+
+        MvcResult result = performAppointmentList(caller)
+                .andExpect(status().isOk())
+                .andReturn();
+
+        Set<Long> appointmentIds = responseAppointmentIds(result);
+        assertEquals(
+                Set.of(firstOwnAppointment.getId(), secondOwnAppointment.getId()),
+                appointmentIds);
+        assertFalse(appointmentIds.contains(otherPatientsAppointment.getId()));
+    }
+
+    @Test
+    void providerListUsesProviderRecordIdRatherThanUserId() throws Exception {
+        saveUser(UserRole.PATIENT, "ID space offset");
+        BookingFixture providerFixture = createFixture();
+        BookingFixture otherProviderFixture = createFixture();
+        Appointment firstOwnAppointment = saveScheduledAppointment(
+                providerFixture,
+                providerFixture.firstPatient(),
+                providerFixture.startAt());
+        Appointment secondOwnAppointment = saveScheduledAppointment(
+                providerFixture,
+                providerFixture.secondPatient(),
+                providerFixture.startAt().plusSeconds(7_200));
+        Appointment otherProvidersAppointment = saveScheduledAppointment(
+                otherProviderFixture,
+                otherProviderFixture.firstPatient(),
+                otherProviderFixture.startAt());
+        assertNotEquals(
+                providerFixture.providerUser().getId(),
+                providerFixture.provider().getId());
+
+        MvcResult result = performAppointmentList(providerFixture.providerUser())
+                .andExpect(status().isOk())
+                .andReturn();
+
+        Set<Long> appointmentIds = responseAppointmentIds(result);
+        assertEquals(
+                Set.of(firstOwnAppointment.getId(), secondOwnAppointment.getId()),
+                appointmentIds);
+        assertFalse(appointmentIds.contains(otherProvidersAppointment.getId()));
+    }
+
+    @Test
+    void receptionistListContainsAllAppointments() throws Exception {
+        BookingFixture firstFixture = createFixture();
+        BookingFixture secondFixture = createFixture();
+        Appointment firstAppointment = saveScheduledAppointment(
+                firstFixture, firstFixture.firstPatient(), firstFixture.startAt());
+        Appointment secondAppointment = saveScheduledAppointment(
+                secondFixture, secondFixture.secondPatient(), secondFixture.startAt());
+        User receptionist = saveUser(UserRole.RECEPTIONIST, "Receptionist");
+
+        MvcResult result = performAppointmentList(receptionist)
+                .andExpect(status().isOk())
+                .andReturn();
+
+        assertEquals(
+                Set.of(firstAppointment.getId(), secondAppointment.getId()),
+                responseAppointmentIds(result));
+    }
+
+    @Test
+    void adminListContainsAllAppointments() throws Exception {
+        BookingFixture firstFixture = createFixture();
+        BookingFixture secondFixture = createFixture();
+        Appointment firstAppointment = saveScheduledAppointment(
+                firstFixture, firstFixture.firstPatient(), firstFixture.startAt());
+        Appointment secondAppointment = saveScheduledAppointment(
+                secondFixture, secondFixture.secondPatient(), secondFixture.startAt());
+        User admin = saveUser(UserRole.ADMIN, "Administrator");
+
+        MvcResult result = performAppointmentList(admin)
+                .andExpect(status().isOk())
+                .andReturn();
+
+        assertEquals(
+                Set.of(firstAppointment.getId(), secondAppointment.getId()),
+                responseAppointmentIds(result));
+    }
+
+    @Test
+    void emptyAppointmentScopeReturnsEmptyList() throws Exception {
+        BookingFixture fixture = createFixture();
+
+        performAppointmentList(fixture.firstPatient())
+                .andExpect(status().isOk())
+                .andExpect(content().json("[]"));
+    }
+
+    @Test
+    void appointmentListDoesNotRequireCsrfToken() throws Exception {
+        BookingFixture fixture = createFixture();
+        saveScheduledAppointment(fixture, fixture.firstPatient(), fixture.startAt());
+
+        performAppointmentList(fixture.firstPatient())
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void unauthenticatedAppointmentListIsUnauthorized() throws Exception {
+        mockMvc.perform(get("/api/appointments"))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void appointmentListIncludesEveryStatusInPatientScope() throws Exception {
+        BookingFixture fixture = createFixture();
+        User caller = fixture.firstPatient();
+        Instant firstStartAt = fixture.startAt();
+        Appointment scheduled = saveAppointment(
+                fixture, caller, firstStartAt, AppointmentStatus.SCHEDULED);
+        Appointment cancelled = saveAppointment(
+                fixture,
+                caller,
+                firstStartAt.plusSeconds(7_200),
+                AppointmentStatus.CANCELLED);
+        Appointment completed = saveAppointment(
+                fixture,
+                caller,
+                firstStartAt.plusSeconds(14_400),
+                AppointmentStatus.COMPLETED);
+        Appointment noShow = saveAppointment(
+                fixture,
+                caller,
+                firstStartAt.plusSeconds(21_600),
+                AppointmentStatus.NO_SHOW);
+
+        MvcResult result = performAppointmentList(caller)
+                .andExpect(status().isOk())
+                .andReturn();
+        List<AppointmentResponse> appointments = responseAppointments(result);
+
+        assertEquals(
+                Set.of(
+                        scheduled.getId(),
+                        cancelled.getId(),
+                        completed.getId(),
+                        noShow.getId()),
+                Set.copyOf(appointments.stream().map(AppointmentResponse::id).toList()));
+        assertEquals(
+                Set.of(
+                        AppointmentStatus.SCHEDULED.name(),
+                        AppointmentStatus.CANCELLED.name(),
+                        AppointmentStatus.COMPLETED.name(),
+                        AppointmentStatus.NO_SHOW.name()),
+                Set.copyOf(appointments.stream().map(AppointmentResponse::status).toList()));
+    }
+
+    @Test
+    void providerWithoutProviderRecordUsesExistingIllegalStateMapping() throws Exception {
+        User providerWithoutRecord = saveUser(UserRole.PROVIDER, "Provider without record");
+
+        performAppointmentList(providerWithoutRecord)
+                .andExpect(status().isInternalServerError())
+                .andExpect(jsonPath("$.code").value("ILLEGAL_STATE"))
+                .andExpect(jsonPath("$.message").value("An internal error occurred"));
+    }
+
+    private ResultActions performAppointmentList(User caller) throws Exception {
+        return mockMvc.perform(get("/api/appointments")
+                .with(user(new AuthenticatedUser(caller))));
+    }
+
+    private List<AppointmentResponse> responseAppointments(MvcResult result) throws Exception {
+        return objectMapper.readerForListOf(AppointmentResponse.class)
+                .readValue(result.getResponse().getContentAsByteArray());
+    }
+
+    private Set<Long> responseAppointmentIds(MvcResult result) throws Exception {
+        return Set.copyOf(responseAppointments(result).stream()
+                .map(AppointmentResponse::id)
+                .toList());
+    }
+
     private ResultActions performAppointmentAction(
             User caller,
             Long appointmentId,
@@ -680,6 +874,19 @@ class AppointmentControllerTest {
         appointment.setStartAt(startAt);
         appointment.setEndAt(startAt.plusSeconds(3_600));
         appointment.setStatus(AppointmentStatus.SCHEDULED);
+        return appointmentRepository.saveAndFlush(appointment);
+    }
+
+    private Appointment saveAppointment(
+            BookingFixture fixture,
+            User patient,
+            Instant startAt,
+            AppointmentStatus status) {
+        Appointment appointment = saveScheduledAppointment(fixture, patient, startAt);
+        appointment.setStatus(status);
+        if (status == AppointmentStatus.CANCELLED) {
+            appointment.setCancellationReason(CancellationReason.PATIENT_CANCELLED);
+        }
         return appointmentRepository.saveAndFlush(appointment);
     }
 

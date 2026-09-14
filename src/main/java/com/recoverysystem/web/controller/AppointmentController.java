@@ -1,10 +1,12 @@
 package com.recoverysystem.web.controller;
 
 import com.recoverysystem.domain.entity.Appointment;
+import com.recoverysystem.domain.entity.Provider;
 import com.recoverysystem.domain.enums.CancellationReason;
 import com.recoverysystem.exception.AppointmentNotFoundException;
 import com.recoverysystem.exception.ProviderActionNotPermittedException;
 import com.recoverysystem.repository.AppointmentRepository;
+import com.recoverysystem.repository.ProviderRepository;
 import com.recoverysystem.security.AuthenticatedUser;
 import com.recoverysystem.service.AppointmentCancellationService;
 import com.recoverysystem.service.AppointmentCompletionService;
@@ -17,9 +19,11 @@ import com.recoverysystem.web.dto.CancelAppointmentRequest;
 import com.recoverysystem.web.dto.RescheduleAppointmentRequest;
 import com.recoverysystem.web.security.EffectivePatientIdResolver;
 import jakarta.validation.Valid;
+import java.util.List;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -36,6 +40,7 @@ public class AppointmentController {
     private final AppointmentNoShowService appointmentNoShowService;
     private final AppointmentReschedulingService appointmentReschedulingService;
     private final AppointmentRepository appointmentRepository;
+    private final ProviderRepository providerRepository;
     private final EffectivePatientIdResolver effectivePatientIdResolver;
 
     public AppointmentController(
@@ -45,6 +50,7 @@ public class AppointmentController {
             AppointmentNoShowService appointmentNoShowService,
             AppointmentReschedulingService appointmentReschedulingService,
             AppointmentRepository appointmentRepository,
+            ProviderRepository providerRepository,
             EffectivePatientIdResolver effectivePatientIdResolver) {
         this.directBookingService = directBookingService;
         this.appointmentCancellationService = appointmentCancellationService;
@@ -52,7 +58,31 @@ public class AppointmentController {
         this.appointmentNoShowService = appointmentNoShowService;
         this.appointmentReschedulingService = appointmentReschedulingService;
         this.appointmentRepository = appointmentRepository;
+        this.providerRepository = providerRepository;
         this.effectivePatientIdResolver = effectivePatientIdResolver;
+    }
+
+    @GetMapping
+    ResponseEntity<List<AppointmentResponse>> listAppointments(
+            @AuthenticationPrincipal AuthenticatedUser authenticatedUser) {
+        // Deliberately no status filter: the scoped history includes scheduled and resolved
+        // appointments because FR-APT-3 does not restrict the listing to active records.
+        // The MVP returns the full unbounded scope; pagination can be added when volume warrants it.
+        List<Appointment> appointments = switch (authenticatedUser.getRole()) {
+            case PATIENT -> appointmentRepository.findByPatientId(authenticatedUser.getUserId());
+            case PROVIDER -> {
+                Provider provider = providerRepository.findByUserId(authenticatedUser.getUserId())
+                        .orElseThrow(() -> new IllegalStateException(
+                                "Authenticated PROVIDER user %d has no corresponding Provider row"
+                                        .formatted(authenticatedUser.getUserId())));
+                yield appointmentRepository.findByProviderId(provider.getId());
+            }
+            case RECEPTIONIST, ADMIN -> appointmentRepository.findAll();
+        };
+        List<AppointmentResponse> response = appointments.stream()
+                .map(AppointmentResponse::from)
+                .toList();
+        return ResponseEntity.ok(response);
     }
 
     @PostMapping
