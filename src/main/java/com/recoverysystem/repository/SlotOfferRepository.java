@@ -14,6 +14,19 @@ import org.springframework.data.repository.query.Param;
 
 public interface SlotOfferRepository extends JpaRepository<SlotOffer, Long> {
 
+    @Query("""
+            SELECT so
+            FROM SlotOffer so
+            WHERE EXISTS (
+                SELECT 1
+                FROM WaitlistEntry entry
+                WHERE entry.id = so.waitlistEntryId
+                  AND entry.patientId = :patientId
+            )
+            ORDER BY so.id ASC
+            """)
+    List<SlotOffer> findAllForPatient(@Param("patientId") Long patientId);
+
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT s FROM SlotOffer s WHERE s.id = :id")
     Optional<SlotOffer> findByIdForUpdate(@Param("id") Long id);

@@ -22,6 +22,11 @@ ID or verify the RECEPTIONIST role.
 derive `actorUserId` from the authenticated server-side session, enforce the receptionist
 role, and add tests proving the patient and actor cannot be forged through request data.
 
+**Locked API-catalog gap.** No REST endpoint exists for
+`SchedulerReassignmentService` (W13B). The service is fully built and tested, but the
+locked API catalog does not specify an endpoint for it. Inventing one was deliberately
+avoided rather than speculating on an unspecified capability.
+
 ### Implement ACTIVE block cancellation
 
 **Current evidence.** `ProviderBlockCancellationService.cancelPendingBlock(...)` only
