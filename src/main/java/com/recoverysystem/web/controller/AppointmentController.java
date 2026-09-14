@@ -4,6 +4,7 @@ import com.recoverysystem.domain.entity.Appointment;
 import com.recoverysystem.domain.entity.Provider;
 import com.recoverysystem.domain.enums.CancellationReason;
 import com.recoverysystem.exception.AppointmentNotFoundException;
+import com.recoverysystem.exception.AppointmentOwnershipException;
 import com.recoverysystem.exception.ProviderActionNotPermittedException;
 import com.recoverysystem.repository.AppointmentRepository;
 import com.recoverysystem.repository.ProviderRepository;
@@ -62,6 +63,8 @@ public class AppointmentController {
         this.effectivePatientIdResolver = effectivePatientIdResolver;
     }
 
+    // Intentional extension beyond the locked API catalog: this collection endpoint provides
+    // role-scoped appointment lists that the catalog's single-entity GET does not provide.
     @GetMapping
     ResponseEntity<List<AppointmentResponse>> listAppointments(
             @AuthenticationPrincipal AuthenticatedUser authenticatedUser) {
@@ -70,19 +73,23 @@ public class AppointmentController {
         // The MVP returns the full unbounded scope; pagination can be added when volume warrants it.
         List<Appointment> appointments = switch (authenticatedUser.getRole()) {
             case PATIENT -> appointmentRepository.findByPatientId(authenticatedUser.getUserId());
-            case PROVIDER -> {
-                Provider provider = providerRepository.findByUserId(authenticatedUser.getUserId())
-                        .orElseThrow(() -> new IllegalStateException(
-                                "Authenticated PROVIDER user %d has no corresponding Provider row"
-                                        .formatted(authenticatedUser.getUserId())));
-                yield appointmentRepository.findByProviderId(provider.getId());
-            }
+            case PROVIDER -> appointmentRepository.findByProviderId(
+                    findProvider(authenticatedUser).getId());
             case RECEPTIONIST, ADMIN -> appointmentRepository.findAll();
         };
         List<AppointmentResponse> response = appointments.stream()
                 .map(AppointmentResponse::from)
                 .toList();
         return ResponseEntity.ok(response);
+    }
+
+    @GetMapping("/{id}")
+    ResponseEntity<AppointmentResponse> getAppointment(
+            @PathVariable Long id,
+            @AuthenticationPrincipal AuthenticatedUser authenticatedUser) {
+        Appointment appointment = findAppointment(id);
+        verifyReadAccess(appointment, authenticatedUser);
+        return ResponseEntity.ok(AppointmentResponse.from(appointment));
     }
 
     @PostMapping
@@ -144,7 +151,7 @@ public class AppointmentController {
         return ResponseEntity.ok(AppointmentResponse.from(appointment));
     }
 
-    @PostMapping("/{id}/no-show")
+    @PostMapping("/{id}/mark-no-show")
     ResponseEntity<AppointmentResponse> markAppointmentNoShow(
             @PathVariable Long id,
             @AuthenticationPrincipal AuthenticatedUser authenticatedUser) {
@@ -156,6 +163,31 @@ public class AppointmentController {
     private Appointment findAppointment(Long appointmentId) {
         return appointmentRepository.findById(appointmentId)
                 .orElseThrow(() -> new AppointmentNotFoundException(appointmentId));
+    }
+
+    private void verifyReadAccess(
+            Appointment appointment, AuthenticatedUser authenticatedUser) {
+        switch (authenticatedUser.getRole()) {
+            case PATIENT -> effectivePatientIdResolver.verifyOwnership(
+                    authenticatedUser.getUserId(), appointment.getPatientId());
+            case PROVIDER -> {
+                Long providerId = findProvider(authenticatedUser).getId();
+                if (!providerId.equals(appointment.getProviderId())) {
+                    throw AppointmentOwnershipException.forProvider(
+                            providerId, appointment.getProviderId());
+                }
+            }
+            case RECEPTIONIST, ADMIN -> {
+                // Staff roles may view any appointment.
+            }
+        }
+    }
+
+    private Provider findProvider(AuthenticatedUser authenticatedUser) {
+        return providerRepository.findByUserId(authenticatedUser.getUserId())
+                .orElseThrow(() -> new IllegalStateException(
+                        "Authenticated PROVIDER user %d has no corresponding Provider row"
+                                .formatted(authenticatedUser.getUserId())));
     }
 
     private void verifyPatientOwnership(

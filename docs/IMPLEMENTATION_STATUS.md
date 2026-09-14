@@ -119,6 +119,14 @@ Repository locking is explicit and pessimistic. Every `@Lock` method uses
 same-type locks are acquired in ascending ID order. The complete lock method inventory and
 per-workflow order are in `docs/CONCURRENCY_AND_LOCKING.md`.
 
+## Stage 2A appointment REST endpoints
+
+The implemented catalog endpoints are `POST /api/appointments` for patient and staff
+booking, `POST /api/appointments/{id}/reschedule`, `GET /api/appointments/{id}`,
+`POST /api/appointments/{id}/cancel`, `POST /api/appointments/{id}/complete`, and
+`POST /api/appointments/{id}/mark-no-show`. `GET /api/appointments` is retained as an
+intentional non-catalog extension for role-scoped collection access.
+
 ## Workflow checkpoint
 
 The workflow numbering comes from `docs/PROJECT_1_MASTER_HANDOFF.md`. The status below uses

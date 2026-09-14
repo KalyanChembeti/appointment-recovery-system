@@ -587,3 +587,9 @@ without extra configuration. The original high-level specification's snake_case 
 were explicitly labeled "Refined in Phase 0" and were never a binding wire contract.
 
 **Where implemented.** All request/response DTOs from Step 8 onward.
+
+## 26. Retain role-scoped appointment collection access
+
+**Decision.** `GET /api/appointments` is an intentional extension beyond the locked API
+catalog because it supplies the collection-level “my appointments” and staff schedule views
+that the catalog's single-entity `GET /api/appointments/{id}` cannot provide.

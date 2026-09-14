@@ -71,6 +71,8 @@ public class SecurityConfiguration {
                         // remains deliberate for paths awaiting their own controller stage.
                         .requestMatchers(HttpMethod.GET, "/api/appointments")
                         .hasAnyRole("PATIENT", "PROVIDER", "RECEPTIONIST", "ADMIN")
+                        .requestMatchers(HttpMethod.GET, "/api/appointments/{id}")
+                        .hasAnyRole("PATIENT", "PROVIDER", "RECEPTIONIST", "ADMIN")
                         .requestMatchers(HttpMethod.POST, "/api/appointments")
                         .hasAnyRole("PATIENT", "RECEPTIONIST", "ADMIN")
                         .requestMatchers(
@@ -81,7 +83,7 @@ public class SecurityConfiguration {
                         .requestMatchers(
                                 HttpMethod.POST,
                                 "/api/appointments/{id}/complete",
-                                "/api/appointments/{id}/no-show")
+                                "/api/appointments/{id}/mark-no-show")
                         .hasAnyRole("RECEPTIONIST", "ADMIN")
                         .requestMatchers(HttpMethod.POST, "/api/waitlist")
                         .hasRole("PATIENT")
@@ -114,7 +116,7 @@ public class SecurityConfiguration {
                                         new AntPathRequestMatcher(
                                                 "/api/appointments/*/complete", "POST"),
                                         new AntPathRequestMatcher(
-                                                "/api/appointments/*/no-show", "POST"),
+                                                "/api/appointments/*/mark-no-show", "POST"),
                                         new AntPathRequestMatcher(
                                                 "/api/waitlist", "POST"),
                                         new AntPathRequestMatcher(

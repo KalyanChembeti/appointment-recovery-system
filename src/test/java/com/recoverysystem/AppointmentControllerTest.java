@@ -548,7 +548,7 @@ class AppointmentControllerTest {
                 fixture, fixture.firstPatient(), fixture.startAt());
         User receptionist = saveUser(UserRole.RECEPTIONIST, "Receptionist");
 
-        performAppointmentAction(receptionist, appointment.getId(), "no-show", true)
+        performAppointmentAction(receptionist, appointment.getId(), "mark-no-show", true)
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.id").value(appointment.getId()))
                 .andExpect(jsonPath("$.status").value(AppointmentStatus.NO_SHOW.name()));
@@ -564,7 +564,7 @@ class AppointmentControllerTest {
                 fixture, fixture.firstPatient(), fixture.startAt());
         User receptionist = saveUser(UserRole.RECEPTIONIST, "Receptionist");
 
-        performAppointmentAction(receptionist, appointment.getId(), "no-show", true)
+        performAppointmentAction(receptionist, appointment.getId(), "mark-no-show", true)
                 .andExpect(status().isOk());
 
         AuditLog audit = auditLogRepository.findAll().getFirst();
@@ -573,6 +573,22 @@ class AppointmentControllerTest {
         assertEquals("NO_SHOW", audit.getAction());
         assertEquals(ActorType.USER, audit.getActorType());
         assertEquals(receptionist.getId(), audit.getActorUserId());
+    }
+
+    @Test
+    void oldNoShowPathNoLongerResolves() throws Exception {
+        BookingFixture fixture = createFixture();
+        Appointment appointment = saveScheduledAppointment(
+                fixture, fixture.firstPatient(), fixture.startAt());
+        User receptionist = saveUser(UserRole.RECEPTIONIST, "Receptionist");
+
+        mockMvc.perform(post("/api/appointments/{id}/no-show", appointment.getId())
+                        .with(user(new AuthenticatedUser(receptionist)))
+                        .with(csrf()))
+                .andExpect(status().isNotFound());
+
+        Appointment persisted = appointmentRepository.findById(appointment.getId()).orElseThrow();
+        assertEquals(AppointmentStatus.SCHEDULED, persisted.getStatus());
     }
 
     @Test
@@ -586,7 +602,7 @@ class AppointmentControllerTest {
                 .andExpect(status().isForbidden())
                 .andExpect(content().string(""));
         performAppointmentAction(
-                        fixture.firstPatient(), appointment.getId(), "no-show", true)
+                        fixture.firstPatient(), appointment.getId(), "mark-no-show", true)
                 .andExpect(status().isForbidden())
                 .andExpect(content().string(""));
 
@@ -606,7 +622,7 @@ class AppointmentControllerTest {
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("PROVIDER_ACTION_NOT_PERMITTED"));
         performAppointmentAction(
-                        fixture.providerUser(), appointment.getId(), "no-show", true)
+                        fixture.providerUser(), appointment.getId(), "mark-no-show", true)
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("PROVIDER_ACTION_NOT_PERMITTED"));
     }
@@ -620,7 +636,7 @@ class AppointmentControllerTest {
         mockMvc.perform(post("/api/appointments/{id}/complete", appointment.getId())
                         .with(csrf()))
                 .andExpect(status().isUnauthorized());
-        mockMvc.perform(post("/api/appointments/{id}/no-show", appointment.getId())
+        mockMvc.perform(post("/api/appointments/{id}/mark-no-show", appointment.getId())
                         .with(csrf()))
                 .andExpect(status().isUnauthorized());
     }
@@ -634,7 +650,7 @@ class AppointmentControllerTest {
 
         performAppointmentAction(receptionist, appointment.getId(), "complete", false)
                 .andExpect(status().isForbidden());
-        performAppointmentAction(receptionist, appointment.getId(), "no-show", false)
+        performAppointmentAction(receptionist, appointment.getId(), "mark-no-show", false)
                 .andExpect(status().isForbidden());
     }
 
@@ -651,6 +667,99 @@ class AppointmentControllerTest {
         performAppointmentAction(receptionist, appointment.getId(), "complete", true)
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("APPOINTMENT_NOT_SCHEDULED"));
+    }
+
+    @Test
+    void patientCanFetchOwnAppointment() throws Exception {
+        BookingFixture fixture = createFixture();
+        Appointment appointment = saveScheduledAppointment(
+                fixture, fixture.firstPatient(), fixture.startAt());
+
+        performAppointmentGet(fixture.firstPatient(), appointment.getId())
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(appointment.getId()))
+                .andExpect(jsonPath("$.patientId").value(fixture.firstPatient().getId()))
+                .andExpect(jsonPath("$.providerId").value(fixture.provider().getId()))
+                .andExpect(jsonPath("$.appointmentTypeId")
+                        .value(fixture.appointmentType().getId()))
+                .andExpect(jsonPath("$.startAt").value(fixture.startAt().toString()))
+                .andExpect(jsonPath("$.endAt")
+                        .value(fixture.startAt().plusSeconds(3_600).toString()))
+                .andExpect(jsonPath("$.status").value(AppointmentStatus.SCHEDULED.name()));
+    }
+
+    @Test
+    void patientCannotFetchAnotherPatientsAppointment() throws Exception {
+        BookingFixture fixture = createFixture();
+        Appointment appointment = saveScheduledAppointment(
+                fixture, fixture.secondPatient(), fixture.startAt());
+
+        performAppointmentGet(fixture.firstPatient(), appointment.getId())
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("APPOINTMENT_OWNERSHIP"));
+    }
+
+    @Test
+    void providerCanFetchAssignedAppointmentUsingProviderRecordId() throws Exception {
+        saveUser(UserRole.PATIENT, "ID space offset");
+        BookingFixture fixture = createFixture();
+        Appointment appointment = saveScheduledAppointment(
+                fixture, fixture.firstPatient(), fixture.startAt());
+        assertNotEquals(fixture.providerUser().getId(), fixture.provider().getId());
+
+        performAppointmentGet(fixture.providerUser(), appointment.getId())
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(appointment.getId()))
+                .andExpect(jsonPath("$.providerId").value(fixture.provider().getId()));
+    }
+
+    @Test
+    void providerCannotFetchAnotherProvidersAppointment() throws Exception {
+        BookingFixture callerFixture = createFixture();
+        BookingFixture appointmentFixture = createFixture();
+        Appointment appointment = saveScheduledAppointment(
+                appointmentFixture,
+                appointmentFixture.firstPatient(),
+                appointmentFixture.startAt());
+
+        performAppointmentGet(callerFixture.providerUser(), appointment.getId())
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("APPOINTMENT_OWNERSHIP"));
+    }
+
+    @Test
+    void receptionistAndAdminCanFetchAnyAppointment() throws Exception {
+        BookingFixture fixture = createFixture();
+        Appointment appointment = saveScheduledAppointment(
+                fixture, fixture.firstPatient(), fixture.startAt());
+        User receptionist = saveUser(UserRole.RECEPTIONIST, "Receptionist");
+        User admin = saveUser(UserRole.ADMIN, "Administrator");
+
+        performAppointmentGet(receptionist, appointment.getId())
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(appointment.getId()));
+        performAppointmentGet(admin, appointment.getId())
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(appointment.getId()));
+    }
+
+    @Test
+    void nonexistentAppointmentFetchIsNotFound() throws Exception {
+        BookingFixture fixture = createFixture();
+
+        performAppointmentGet(fixture.firstPatient(), Long.MAX_VALUE)
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("APPOINTMENT_NOT_FOUND"));
+    }
+
+    @Test
+    void unauthenticatedAppointmentFetchIsUnauthorized() throws Exception {
+        BookingFixture fixture = createFixture();
+        Appointment appointment = saveScheduledAppointment(
+                fixture, fixture.firstPatient(), fixture.startAt());
+
+        mockMvc.perform(get("/api/appointments/{id}", appointment.getId()))
+                .andExpect(status().isUnauthorized());
     }
 
     @Test
@@ -828,6 +937,12 @@ class AppointmentControllerTest {
 
     private ResultActions performAppointmentList(User caller) throws Exception {
         return mockMvc.perform(get("/api/appointments")
+                .with(user(new AuthenticatedUser(caller))));
+    }
+
+    private ResultActions performAppointmentGet(User caller, Long appointmentId)
+            throws Exception {
+        return mockMvc.perform(get("/api/appointments/{id}", appointmentId)
                 .with(user(new AuthenticatedUser(caller))));
     }
 
