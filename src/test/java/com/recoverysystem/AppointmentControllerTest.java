@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -372,6 +373,27 @@ class AppointmentControllerTest {
     }
 
     @Test
+    void rescheduleAuditUsesAuthenticatedCallerAsActor() throws Exception {
+        BookingFixture fixture = createFixture();
+        Appointment oldAppointment = saveScheduledAppointment(
+                fixture, fixture.firstPatient(), fixture.startAt());
+        Instant newStartAt = fixture.startAt().plusSeconds(7_200);
+
+        performReschedule(
+                        fixture.firstPatient(), oldAppointment.getId(), fixture, newStartAt, true)
+                .andExpect(status().isOk());
+
+        List<AuditLog> audits = auditLogRepository.findAll();
+        assertTrue(audits.size() > 1);
+        assertTrue(audits.stream().anyMatch(audit -> "CREATE".equals(audit.getAction())));
+        assertTrue(audits.stream().anyMatch(audit -> "CANCEL".equals(audit.getAction())));
+        audits.forEach(audit -> {
+            assertEquals(ActorType.USER, audit.getActorType());
+            assertEquals(fixture.firstPatient().getId(), audit.getActorUserId());
+        });
+    }
+
+    @Test
     void patientCannotRescheduleAnotherPatientsAppointment() throws Exception {
         BookingFixture fixture = createFixture();
         Appointment oldAppointment = saveScheduledAppointment(
@@ -487,6 +509,24 @@ class AppointmentControllerTest {
     }
 
     @Test
+    void completionAuditUsesAuthenticatedReceptionistAsActor() throws Exception {
+        BookingFixture fixture = createFixture();
+        Appointment appointment = saveScheduledAppointment(
+                fixture, fixture.firstPatient(), Instant.now().minusSeconds(7_200));
+        User receptionist = saveUser(UserRole.RECEPTIONIST, "Receptionist");
+
+        performAppointmentAction(receptionist, appointment.getId(), "complete", true)
+                .andExpect(status().isOk());
+
+        AuditLog audit = auditLogRepository.findAll().getFirst();
+        assertEquals("Appointment", audit.getEntityType());
+        assertEquals(appointment.getId(), audit.getEntityId());
+        assertEquals("COMPLETED", audit.getAction());
+        assertEquals(ActorType.USER, audit.getActorType());
+        assertEquals(receptionist.getId(), audit.getActorUserId());
+    }
+
+    @Test
     void completionBeforeStartUsesExistingGlobalExceptionMapping() throws Exception {
         BookingFixture fixture = createFixture();
         Appointment appointment = saveScheduledAppointment(
@@ -515,6 +555,24 @@ class AppointmentControllerTest {
 
         Appointment persisted = appointmentRepository.findById(appointment.getId()).orElseThrow();
         assertEquals(AppointmentStatus.NO_SHOW, persisted.getStatus());
+    }
+
+    @Test
+    void noShowAuditUsesAuthenticatedReceptionistAsActor() throws Exception {
+        BookingFixture fixture = createFixture();
+        Appointment appointment = saveScheduledAppointment(
+                fixture, fixture.firstPatient(), fixture.startAt());
+        User receptionist = saveUser(UserRole.RECEPTIONIST, "Receptionist");
+
+        performAppointmentAction(receptionist, appointment.getId(), "no-show", true)
+                .andExpect(status().isOk());
+
+        AuditLog audit = auditLogRepository.findAll().getFirst();
+        assertEquals("Appointment", audit.getEntityType());
+        assertEquals(appointment.getId(), audit.getEntityId());
+        assertEquals("NO_SHOW", audit.getAction());
+        assertEquals(ActorType.USER, audit.getActorType());
+        assertEquals(receptionist.getId(), audit.getActorUserId());
     }
 
     @Test
