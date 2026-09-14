@@ -76,6 +76,11 @@ public class SecurityConfiguration {
                                 "/api/appointments/{id}/cancel",
                                 "/api/appointments/{id}/reschedule")
                         .hasAnyRole("PATIENT", "RECEPTIONIST", "ADMIN")
+                        .requestMatchers(
+                                HttpMethod.POST,
+                                "/api/appointments/{id}/complete",
+                                "/api/appointments/{id}/no-show")
+                        .hasAnyRole("RECEPTIONIST", "ADMIN")
                         .anyRequest().permitAll())
                 .exceptionHandling(exceptions -> exceptions
                         .authenticationEntryPoint(
@@ -88,7 +93,11 @@ public class SecurityConfiguration {
                                         new AntPathRequestMatcher(
                                                 "/api/appointments/*/cancel", "POST"),
                                         new AntPathRequestMatcher(
-                                                "/api/appointments/*/reschedule", "POST"))));
+                                                "/api/appointments/*/reschedule", "POST"),
+                                        new AntPathRequestMatcher(
+                                                "/api/appointments/*/complete", "POST"),
+                                        new AntPathRequestMatcher(
+                                                "/api/appointments/*/no-show", "POST"))));
 
         return http.build();
     }

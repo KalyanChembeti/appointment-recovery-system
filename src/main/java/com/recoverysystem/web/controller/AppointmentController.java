@@ -7,6 +7,8 @@ import com.recoverysystem.exception.ProviderActionNotPermittedException;
 import com.recoverysystem.repository.AppointmentRepository;
 import com.recoverysystem.security.AuthenticatedUser;
 import com.recoverysystem.service.AppointmentCancellationService;
+import com.recoverysystem.service.AppointmentCompletionService;
+import com.recoverysystem.service.AppointmentNoShowService;
 import com.recoverysystem.service.AppointmentReschedulingService;
 import com.recoverysystem.service.DirectBookingService;
 import com.recoverysystem.web.dto.AppointmentResponse;
@@ -30,6 +32,8 @@ public class AppointmentController {
 
     private final DirectBookingService directBookingService;
     private final AppointmentCancellationService appointmentCancellationService;
+    private final AppointmentCompletionService appointmentCompletionService;
+    private final AppointmentNoShowService appointmentNoShowService;
     private final AppointmentReschedulingService appointmentReschedulingService;
     private final AppointmentRepository appointmentRepository;
     private final EffectivePatientIdResolver effectivePatientIdResolver;
@@ -37,11 +41,15 @@ public class AppointmentController {
     public AppointmentController(
             DirectBookingService directBookingService,
             AppointmentCancellationService appointmentCancellationService,
+            AppointmentCompletionService appointmentCompletionService,
+            AppointmentNoShowService appointmentNoShowService,
             AppointmentReschedulingService appointmentReschedulingService,
             AppointmentRepository appointmentRepository,
             EffectivePatientIdResolver effectivePatientIdResolver) {
         this.directBookingService = directBookingService;
         this.appointmentCancellationService = appointmentCancellationService;
+        this.appointmentCompletionService = appointmentCompletionService;
+        this.appointmentNoShowService = appointmentNoShowService;
         this.appointmentReschedulingService = appointmentReschedulingService;
         this.appointmentRepository = appointmentRepository;
         this.effectivePatientIdResolver = effectivePatientIdResolver;
@@ -94,6 +102,24 @@ public class AppointmentController {
                 request.appointmentTypeId(),
                 request.startAt(),
                 authenticatedUser.getUserId());
+        return ResponseEntity.ok(AppointmentResponse.from(appointment));
+    }
+
+    @PostMapping("/{id}/complete")
+    ResponseEntity<AppointmentResponse> completeAppointment(
+            @PathVariable Long id,
+            @AuthenticationPrincipal AuthenticatedUser authenticatedUser) {
+        Appointment appointment = appointmentCompletionService.completeAppointment(
+                id, authenticatedUser.getUserId());
+        return ResponseEntity.ok(AppointmentResponse.from(appointment));
+    }
+
+    @PostMapping("/{id}/no-show")
+    ResponseEntity<AppointmentResponse> markAppointmentNoShow(
+            @PathVariable Long id,
+            @AuthenticationPrincipal AuthenticatedUser authenticatedUser) {
+        Appointment appointment = appointmentNoShowService.markNoShow(
+                id, authenticatedUser.getUserId());
         return ResponseEntity.ok(AppointmentResponse.from(appointment));
     }
 

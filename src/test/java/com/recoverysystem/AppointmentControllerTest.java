@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -461,6 +462,145 @@ class AppointmentControllerTest {
                         fixture.startAt().plusSeconds(7_200),
                         false)
                 .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void receptionistCanCompletePastScheduledAppointment() throws Exception {
+        BookingFixture fixture = createFixture();
+        Instant pastStartAt = Instant.now().minusSeconds(7_200);
+        Appointment appointment = saveScheduledAppointment(
+                fixture, fixture.firstPatient(), pastStartAt);
+        User receptionist = saveUser(UserRole.RECEPTIONIST, "Receptionist");
+
+        performAppointmentAction(receptionist, appointment.getId(), "complete", true)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(appointment.getId()))
+                .andExpect(jsonPath("$.status").value(AppointmentStatus.COMPLETED.name()));
+
+        Appointment persisted = appointmentRepository.findById(appointment.getId()).orElseThrow();
+        assertEquals(AppointmentStatus.COMPLETED, persisted.getStatus());
+    }
+
+    @Test
+    void completionBeforeStartUsesExistingGlobalExceptionMapping() throws Exception {
+        BookingFixture fixture = createFixture();
+        Appointment appointment = saveScheduledAppointment(
+                fixture, fixture.firstPatient(), Instant.now().plusSeconds(7_200));
+        User receptionist = saveUser(UserRole.RECEPTIONIST, "Receptionist");
+
+        performAppointmentAction(receptionist, appointment.getId(), "complete", true)
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("APPOINTMENT_NOT_YET_STARTED"));
+
+        Appointment persisted = appointmentRepository.findById(appointment.getId()).orElseThrow();
+        assertEquals(AppointmentStatus.SCHEDULED, persisted.getStatus());
+    }
+
+    @Test
+    void receptionistCanMarkScheduledAppointmentNoShow() throws Exception {
+        BookingFixture fixture = createFixture();
+        Appointment appointment = saveScheduledAppointment(
+                fixture, fixture.firstPatient(), fixture.startAt());
+        User receptionist = saveUser(UserRole.RECEPTIONIST, "Receptionist");
+
+        performAppointmentAction(receptionist, appointment.getId(), "no-show", true)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(appointment.getId()))
+                .andExpect(jsonPath("$.status").value(AppointmentStatus.NO_SHOW.name()));
+
+        Appointment persisted = appointmentRepository.findById(appointment.getId()).orElseThrow();
+        assertEquals(AppointmentStatus.NO_SHOW, persisted.getStatus());
+    }
+
+    @Test
+    void patientCannotCompleteOrMarkAppointmentsNoShow() throws Exception {
+        BookingFixture fixture = createFixture();
+        Appointment appointment = saveScheduledAppointment(
+                fixture, fixture.firstPatient(), Instant.now().minusSeconds(7_200));
+
+        performAppointmentAction(
+                        fixture.firstPatient(), appointment.getId(), "complete", true)
+                .andExpect(status().isForbidden())
+                .andExpect(content().string(""));
+        performAppointmentAction(
+                        fixture.firstPatient(), appointment.getId(), "no-show", true)
+                .andExpect(status().isForbidden())
+                .andExpect(content().string(""));
+
+        Appointment persisted = appointmentRepository.findById(appointment.getId()).orElseThrow();
+        assertEquals(AppointmentStatus.SCHEDULED, persisted.getStatus());
+        assertEquals(0L, auditLogRepository.count());
+    }
+
+    @Test
+    void providerCannotCompleteOrMarkAppointmentsNoShow() throws Exception {
+        BookingFixture fixture = createFixture();
+        Appointment appointment = saveScheduledAppointment(
+                fixture, fixture.firstPatient(), Instant.now().minusSeconds(7_200));
+
+        performAppointmentAction(
+                        fixture.providerUser(), appointment.getId(), "complete", true)
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("PROVIDER_ACTION_NOT_PERMITTED"));
+        performAppointmentAction(
+                        fixture.providerUser(), appointment.getId(), "no-show", true)
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("PROVIDER_ACTION_NOT_PERMITTED"));
+    }
+
+    @Test
+    void unauthenticatedCompletionAndNoShowAreUnauthorized() throws Exception {
+        BookingFixture fixture = createFixture();
+        Appointment appointment = saveScheduledAppointment(
+                fixture, fixture.firstPatient(), Instant.now().minusSeconds(7_200));
+
+        mockMvc.perform(post("/api/appointments/{id}/complete", appointment.getId())
+                        .with(csrf()))
+                .andExpect(status().isUnauthorized());
+        mockMvc.perform(post("/api/appointments/{id}/no-show", appointment.getId())
+                        .with(csrf()))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void completionAndNoShowWithoutCsrfAreForbidden() throws Exception {
+        BookingFixture fixture = createFixture();
+        Appointment appointment = saveScheduledAppointment(
+                fixture, fixture.firstPatient(), Instant.now().minusSeconds(7_200));
+        User receptionist = saveUser(UserRole.RECEPTIONIST, "Receptionist");
+
+        performAppointmentAction(receptionist, appointment.getId(), "complete", false)
+                .andExpect(status().isForbidden());
+        performAppointmentAction(receptionist, appointment.getId(), "no-show", false)
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void completingCancelledAppointmentUsesExistingNotScheduledMapping() throws Exception {
+        BookingFixture fixture = createFixture();
+        Appointment appointment = saveScheduledAppointment(
+                fixture, fixture.firstPatient(), Instant.now().minusSeconds(7_200));
+        appointment.setStatus(AppointmentStatus.CANCELLED);
+        appointment.setCancellationReason(CancellationReason.PATIENT_CANCELLED);
+        appointmentRepository.saveAndFlush(appointment);
+        User receptionist = saveUser(UserRole.RECEPTIONIST, "Receptionist");
+
+        performAppointmentAction(receptionist, appointment.getId(), "complete", true)
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("APPOINTMENT_NOT_SCHEDULED"));
+    }
+
+    private ResultActions performAppointmentAction(
+            User caller,
+            Long appointmentId,
+            String action,
+            boolean includeCsrf) throws Exception {
+        var request = post("/api/appointments/{id}/{action}", appointmentId, action)
+                .with(user(new AuthenticatedUser(caller)));
+        if (includeCsrf) {
+            request.with(csrf());
+        }
+        return mockMvc.perform(request);
     }
 
     private ResultActions performBooking(
