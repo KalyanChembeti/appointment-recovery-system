@@ -1,6 +1,7 @@
 package com.recoverysystem;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
@@ -12,16 +13,19 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.recoverysystem.domain.entity.Appointment;
 import com.recoverysystem.domain.entity.AppointmentType;
+import com.recoverysystem.domain.entity.AuditLog;
 import com.recoverysystem.domain.entity.Provider;
 import com.recoverysystem.domain.entity.ProviderUnavailability;
 import com.recoverysystem.domain.entity.Specialty;
 import com.recoverysystem.domain.entity.User;
+import com.recoverysystem.domain.enums.ActorType;
 import com.recoverysystem.domain.enums.AppointmentStatus;
 import com.recoverysystem.domain.enums.CancellationReason;
 import com.recoverysystem.domain.enums.ProviderUnavailabilityStatus;
 import com.recoverysystem.domain.enums.UserRole;
 import com.recoverysystem.repository.AppointmentRepository;
 import com.recoverysystem.repository.AppointmentTypeRepository;
+import com.recoverysystem.repository.AuditLogRepository;
 import com.recoverysystem.repository.ProviderRepository;
 import com.recoverysystem.repository.ProviderUnavailabilityRepository;
 import com.recoverysystem.repository.SpecialtyRepository;
@@ -29,6 +33,7 @@ import com.recoverysystem.repository.UserRepository;
 import com.recoverysystem.security.AuthenticatedUser;
 import com.recoverysystem.web.dto.RequestProviderBlockRequest;
 import java.time.Instant;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicLong;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -87,6 +92,9 @@ class ProviderUnavailabilityControllerTest {
 
     @Autowired
     private AppointmentRepository appointmentRepository;
+
+    @Autowired
+    private AuditLogRepository auditLogRepository;
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
@@ -156,6 +164,26 @@ class ProviderUnavailabilityControllerTest {
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.providerId").value(fixture.provider().getId()))
                 .andExpect(jsonPath("$.status").value(ProviderUnavailabilityStatus.ACTIVE.name()));
+    }
+
+    @Test
+    void adminBlockCreationAuditUsesAuthenticatedAdminAsActor() throws Exception {
+        ProviderFixture fixture = createProviderFixture();
+        User admin = saveUser(UserRole.ADMIN, "Administrator");
+        Instant startAt = futureStart();
+        assertNotEquals(fixture.providerUser().getId(), admin.getId());
+
+        performCreate(
+                        admin,
+                        fixture.provider().getId(),
+                        startAt,
+                        startAt.plusSeconds(3_600),
+                        true)
+                .andExpect(status().isCreated());
+
+        ProviderUnavailability block = providerUnavailabilityRepository.findAll().getFirst();
+        assertSingleUserAudit(
+                block.getId(), "CREATE", admin, fixture.providerUser());
     }
 
     @Test
@@ -252,6 +280,21 @@ class ProviderUnavailabilityControllerTest {
     }
 
     @Test
+    void adminBlockActivationAuditUsesAuthenticatedAdminAsActor() throws Exception {
+        ProviderFixture fixture = createProviderFixture();
+        ProviderUnavailability block = saveBlock(
+                fixture.provider(), futureStart(), ProviderUnavailabilityStatus.PENDING);
+        User admin = saveUser(UserRole.ADMIN, "Administrator");
+        assertNotEquals(fixture.providerUser().getId(), admin.getId());
+
+        performAction(admin, block.getId(), "activate", true)
+                .andExpect(status().isOk());
+
+        assertSingleUserAudit(
+                block.getId(), "ACTIVATE", admin, fixture.providerUser());
+    }
+
+    @Test
     void providerCannotActivatePendingBlock() throws Exception {
         ProviderFixture fixture = createProviderFixture();
         ProviderUnavailability block = saveBlock(
@@ -322,6 +365,21 @@ class ProviderUnavailabilityControllerTest {
                 providerUnavailabilityRepository.findById(block.getId())
                         .orElseThrow()
                         .getStatus());
+    }
+
+    @Test
+    void adminBlockCancellationAuditUsesAuthenticatedAdminAsActor() throws Exception {
+        ProviderFixture fixture = createProviderFixture();
+        ProviderUnavailability block = saveBlock(
+                fixture.provider(), futureStart(), ProviderUnavailabilityStatus.PENDING);
+        User admin = saveUser(UserRole.ADMIN, "Administrator");
+        assertNotEquals(fixture.providerUser().getId(), admin.getId());
+
+        performAction(admin, block.getId(), "cancel", true)
+                .andExpect(status().isOk());
+
+        assertSingleUserAudit(
+                block.getId(), "CANCEL", admin, fixture.providerUser());
     }
 
     @Test
@@ -496,6 +554,19 @@ class ProviderUnavailabilityControllerTest {
             block.setActivatedAt(Instant.now());
         }
         return providerUnavailabilityRepository.saveAndFlush(block);
+    }
+
+    private void assertSingleUserAudit(
+            Long blockId, String action, User actor, User providerOwner) {
+        List<AuditLog> audits = auditLogRepository.findAll();
+        assertEquals(1, audits.size());
+        AuditLog audit = audits.getFirst();
+        assertEquals("ProviderUnavailability", audit.getEntityType());
+        assertEquals(blockId, audit.getEntityId());
+        assertEquals(action, audit.getAction());
+        assertEquals(ActorType.USER, audit.getActorType());
+        assertEquals(actor.getId(), audit.getActorUserId());
+        assertNotEquals(providerOwner.getId(), audit.getActorUserId());
     }
 
     private User saveUser(UserRole role, String displayName) {

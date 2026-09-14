@@ -1,6 +1,7 @@
 package com.recoverysystem;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
@@ -15,16 +16,19 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.recoverysystem.domain.entity.Appointment;
 import com.recoverysystem.domain.entity.AppointmentType;
+import com.recoverysystem.domain.entity.AuditLog;
 import com.recoverysystem.domain.entity.Provider;
 import com.recoverysystem.domain.entity.Specialty;
 import com.recoverysystem.domain.entity.User;
 import com.recoverysystem.domain.entity.WaitlistEntry;
+import com.recoverysystem.domain.enums.ActorType;
 import com.recoverysystem.domain.enums.AppointmentStatus;
 import com.recoverysystem.domain.enums.TimeOfDayPreference;
 import com.recoverysystem.domain.enums.UserRole;
 import com.recoverysystem.domain.enums.WaitlistEntryStatus;
 import com.recoverysystem.repository.AppointmentRepository;
 import com.recoverysystem.repository.AppointmentTypeRepository;
+import com.recoverysystem.repository.AuditLogRepository;
 import com.recoverysystem.repository.ProviderRepository;
 import com.recoverysystem.repository.SpecialtyRepository;
 import com.recoverysystem.repository.UserRepository;
@@ -35,6 +39,7 @@ import com.recoverysystem.web.dto.ModifyWaitlistRequest;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicLong;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -94,6 +99,9 @@ class WaitlistControllerTest {
 
     @Autowired
     private WaitlistEntryRepository waitlistEntryRepository;
+
+    @Autowired
+    private AuditLogRepository auditLogRepository;
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
@@ -286,6 +294,56 @@ class WaitlistControllerTest {
                 waitlistEntryRepository.findById(adminTarget.getId())
                         .orElseThrow()
                         .getStatus());
+    }
+
+    @Test
+    void receptionistRemovalAuditUsesAuthenticatedReceptionistAsActor() throws Exception {
+        WaitlistFixture fixture = createFixture();
+        WaitlistEntry entry = saveWaitlistEntry(
+                fixture,
+                fixture.firstPatient(),
+                saveScheduledAppointment(
+                        fixture, fixture.firstPatient(), fixture.appointmentStartAt()));
+        User receptionist = saveUser(UserRole.RECEPTIONIST, "Receptionist");
+        assertNotEquals(fixture.firstPatient().getId(), receptionist.getId());
+
+        performRemove(receptionist, entry.getId(), true)
+                .andExpect(status().isOk());
+
+        List<AuditLog> audits = auditLogRepository.findAll();
+        assertEquals(1, audits.size());
+        AuditLog audit = audits.getFirst();
+        assertEquals("WaitlistEntry", audit.getEntityType());
+        assertEquals(entry.getId(), audit.getEntityId());
+        assertEquals("REMOVE", audit.getAction());
+        assertEquals(ActorType.USER, audit.getActorType());
+        assertEquals(receptionist.getId(), audit.getActorUserId());
+        assertNotEquals(fixture.firstPatient().getId(), audit.getActorUserId());
+    }
+
+    @Test
+    void adminRemovalAuditUsesAuthenticatedAdminAsActor() throws Exception {
+        WaitlistFixture fixture = createFixture();
+        WaitlistEntry entry = saveWaitlistEntry(
+                fixture,
+                fixture.firstPatient(),
+                saveScheduledAppointment(
+                        fixture, fixture.firstPatient(), fixture.appointmentStartAt()));
+        User admin = saveUser(UserRole.ADMIN, "Administrator");
+        assertNotEquals(fixture.firstPatient().getId(), admin.getId());
+
+        performRemove(admin, entry.getId(), true)
+                .andExpect(status().isOk());
+
+        List<AuditLog> audits = auditLogRepository.findAll();
+        assertEquals(1, audits.size());
+        AuditLog audit = audits.getFirst();
+        assertEquals("WaitlistEntry", audit.getEntityType());
+        assertEquals(entry.getId(), audit.getEntityId());
+        assertEquals("REMOVE", audit.getAction());
+        assertEquals(ActorType.USER, audit.getActorType());
+        assertEquals(admin.getId(), audit.getActorUserId());
+        assertNotEquals(fixture.firstPatient().getId(), audit.getActorUserId());
     }
 
     @Test
