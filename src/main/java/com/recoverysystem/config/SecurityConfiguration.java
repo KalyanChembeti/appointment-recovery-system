@@ -100,6 +100,16 @@ public class SecurityConfiguration {
                                 "/api/slot-offers/{id}/accept",
                                 "/api/slot-offers/{id}/decline")
                         .hasAnyRole("PATIENT", "RECEPTIONIST", "ADMIN")
+                        .requestMatchers(HttpMethod.POST, "/api/provider-unavailability")
+                        .hasAnyRole("PROVIDER", "ADMIN")
+                        .requestMatchers(
+                                HttpMethod.POST,
+                                "/api/provider-unavailability/{id}/activate")
+                        .hasRole("ADMIN")
+                        .requestMatchers(
+                                HttpMethod.POST,
+                                "/api/provider-unavailability/{id}/cancel")
+                        .hasAnyRole("PROVIDER", "ADMIN")
                         .anyRequest().permitAll())
                 .exceptionHandling(exceptions -> exceptions
                         .authenticationEntryPoint(
@@ -128,7 +138,13 @@ public class SecurityConfiguration {
                                         new AntPathRequestMatcher(
                                                 "/api/slot-offers/*/accept", "POST"),
                                         new AntPathRequestMatcher(
-                                                "/api/slot-offers/*/decline", "POST"))));
+                                                "/api/slot-offers/*/decline", "POST"),
+                                        new AntPathRequestMatcher(
+                                                "/api/provider-unavailability", "POST"),
+                                        new AntPathRequestMatcher(
+                                                "/api/provider-unavailability/*/activate", "POST"),
+                                        new AntPathRequestMatcher(
+                                                "/api/provider-unavailability/*/cancel", "POST"))));
 
         return http.build();
     }

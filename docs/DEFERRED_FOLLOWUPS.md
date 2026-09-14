@@ -131,6 +131,15 @@ meet this requirement.
 
 ## Phase 1 - REST API and validation
 
+### Add provider working-hours management
+
+**Current evidence.** No transactional service or REST endpoint creates or updates
+`ProviderSchedule` rows. Working hours are currently constructed directly only by test fixtures,
+and working-hours management was not one of the 14 implemented workflows.
+
+**Required follow-up.** Define and implement an authenticated provider/admin workflow for setting
+and updating provider working hours before exposing a REST endpoint for that capability.
+
 **Current evidence.** `pom.xml` includes Spring MVC and Jakarta validation starters, but
 `src/main/java/com/recoverysystem/web/` has no controllers or DTOs. No exception handler
 maps the 32 domain exceptions to stable HTTP responses.

@@ -12,6 +12,7 @@ import com.recoverysystem.exception.InvalidBlockIntervalException;
 import com.recoverysystem.exception.InvalidCancellationReasonException;
 import com.recoverysystem.exception.InvalidWaitlistDateRangeException;
 import com.recoverysystem.exception.MissingPatientIdException;
+import com.recoverysystem.exception.MissingProviderIdException;
 import com.recoverysystem.exception.OfferAcceptanceOwnershipException;
 import com.recoverysystem.exception.OfferAlreadyAcceptedException;
 import com.recoverysystem.exception.OfferAlreadyResolvedException;
@@ -20,6 +21,7 @@ import com.recoverysystem.exception.PatientDoubleBookedException;
 import com.recoverysystem.exception.PatientIdentityMismatchException;
 import com.recoverysystem.exception.PreferredProviderSpecialtyMismatchException;
 import com.recoverysystem.exception.ProviderActionNotPermittedException;
+import com.recoverysystem.exception.ProviderBlockOwnershipException;
 import com.recoverysystem.exception.ProviderBlockConflictsUnresolvedException;
 import com.recoverysystem.exception.ProviderBlockNotPendingException;
 import com.recoverysystem.exception.ProviderDoubleBookedException;
@@ -266,6 +268,12 @@ public class GlobalExceptionHandler {
         return error(HttpStatus.BAD_REQUEST, "MISSING_PATIENT_ID", exception, request);
     }
 
+    @ExceptionHandler(MissingProviderIdException.class)
+    ResponseEntity<ApiErrorResponse> handleMissingProviderId(
+            MissingProviderIdException exception, HttpServletRequest request) {
+        return error(HttpStatus.BAD_REQUEST, "MISSING_PROVIDER_ID", exception, request);
+    }
+
     @ExceptionHandler(OfferAcceptanceOwnershipException.class)
     ResponseEntity<ApiErrorResponse> handleOfferAcceptanceOwnership(
             OfferAcceptanceOwnershipException exception, HttpServletRequest request) {
@@ -304,6 +312,12 @@ public class GlobalExceptionHandler {
                 "PROVIDER_ACTION_NOT_PERMITTED",
                 exception,
                 request);
+    }
+
+    @ExceptionHandler(ProviderBlockOwnershipException.class)
+    ResponseEntity<ApiErrorResponse> handleProviderBlockOwnership(
+            ProviderBlockOwnershipException exception, HttpServletRequest request) {
+        return error(HttpStatus.FORBIDDEN, "PROVIDER_BLOCK_OWNERSHIP", exception, request);
     }
 
     @ExceptionHandler(SiblingAlreadyFulfilledException.class)
