@@ -38,6 +38,7 @@ import com.recoverysystem.exception.WaitlistAppointmentTypeMismatchException;
 import com.recoverysystem.exception.WaitlistEntryAnchorMismatchException;
 import com.recoverysystem.exception.WaitlistEntryNotActiveException;
 import com.recoverysystem.exception.WaitlistEntryNotFoundException;
+import com.recoverysystem.exception.WaitlistEntryOwnershipException;
 import com.recoverysystem.web.dto.ApiErrorResponse;
 import jakarta.servlet.http.HttpServletRequest;
 import java.time.Instant;
@@ -281,6 +282,12 @@ public class GlobalExceptionHandler {
     ResponseEntity<ApiErrorResponse> handleWaitlistAnchorOwnership(
             WaitlistAnchorOwnershipException exception, HttpServletRequest request) {
         return error(HttpStatus.FORBIDDEN, "WAITLIST_ANCHOR_OWNERSHIP", exception, request);
+    }
+
+    @ExceptionHandler(WaitlistEntryOwnershipException.class)
+    ResponseEntity<ApiErrorResponse> handleWaitlistEntryOwnership(
+            WaitlistEntryOwnershipException exception, HttpServletRequest request) {
+        return error(HttpStatus.FORBIDDEN, "WAITLIST_ENTRY_OWNERSHIP", exception, request);
     }
 
     @ExceptionHandler(PatientIdentityMismatchException.class)

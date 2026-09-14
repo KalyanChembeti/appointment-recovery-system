@@ -83,6 +83,14 @@ public class SecurityConfiguration {
                                 "/api/appointments/{id}/complete",
                                 "/api/appointments/{id}/no-show")
                         .hasAnyRole("RECEPTIONIST", "ADMIN")
+                        .requestMatchers(HttpMethod.POST, "/api/waitlist")
+                        .hasRole("PATIENT")
+                        .requestMatchers(HttpMethod.GET, "/api/waitlist/{id}")
+                        .hasRole("PATIENT")
+                        .requestMatchers(HttpMethod.PUT, "/api/waitlist/{id}")
+                        .hasRole("PATIENT")
+                        .requestMatchers(HttpMethod.DELETE, "/api/waitlist/{id}")
+                        .hasAnyRole("PATIENT", "RECEPTIONIST", "ADMIN")
                         .anyRequest().permitAll())
                 .exceptionHandling(exceptions -> exceptions
                         .authenticationEntryPoint(
@@ -99,7 +107,15 @@ public class SecurityConfiguration {
                                         new AntPathRequestMatcher(
                                                 "/api/appointments/*/complete", "POST"),
                                         new AntPathRequestMatcher(
-                                                "/api/appointments/*/no-show", "POST"))));
+                                                "/api/appointments/*/no-show", "POST"),
+                                        new AntPathRequestMatcher(
+                                                "/api/waitlist", "POST"),
+                                        new AntPathRequestMatcher(
+                                                "/api/waitlist/*", "GET"),
+                                        new AntPathRequestMatcher(
+                                                "/api/waitlist/*", "PUT"),
+                                        new AntPathRequestMatcher(
+                                                "/api/waitlist/*", "DELETE"))));
 
         return http.build();
     }
