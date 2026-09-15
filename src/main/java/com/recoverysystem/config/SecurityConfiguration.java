@@ -100,6 +100,8 @@ public class SecurityConfiguration {
                                 "/api/slot-offers/{id}/accept",
                                 "/api/slot-offers/{id}/decline")
                         .hasAnyRole("PATIENT", "RECEPTIONIST", "ADMIN")
+                        .requestMatchers(HttpMethod.POST, "/api/providers")
+                        .hasRole("ADMIN")
                         .requestMatchers(HttpMethod.POST, "/api/provider-unavailability")
                         .hasAnyRole("PROVIDER", "ADMIN")
                         .requestMatchers(
@@ -139,6 +141,8 @@ public class SecurityConfiguration {
                                                 "/api/slot-offers/*/accept", "POST"),
                                         new AntPathRequestMatcher(
                                                 "/api/slot-offers/*/decline", "POST"),
+                                        new AntPathRequestMatcher(
+                                                "/api/providers", "POST"),
                                         new AntPathRequestMatcher(
                                                 "/api/provider-unavailability", "POST"),
                                         new AntPathRequestMatcher(

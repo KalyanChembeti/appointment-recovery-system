@@ -10,6 +10,7 @@ import com.recoverysystem.exception.AppointmentTypeSpecialtyMismatchException;
 import com.recoverysystem.exception.DuplicateEmailException;
 import com.recoverysystem.exception.InvalidBlockIntervalException;
 import com.recoverysystem.exception.InvalidCancellationReasonException;
+import com.recoverysystem.exception.InvalidProviderUserRoleException;
 import com.recoverysystem.exception.InvalidWaitlistDateRangeException;
 import com.recoverysystem.exception.MissingPatientIdException;
 import com.recoverysystem.exception.MissingProviderIdException;
@@ -34,6 +35,9 @@ import com.recoverysystem.exception.RecoveryJobNotOpenException;
 import com.recoverysystem.exception.SiblingAlreadyFulfilledException;
 import com.recoverysystem.exception.SlotOfferNotFoundException;
 import com.recoverysystem.exception.SlotOfferNotOfferedException;
+import com.recoverysystem.exception.SpecialtyNotFoundException;
+import com.recoverysystem.exception.UserAlreadyLinkedToProviderException;
+import com.recoverysystem.exception.UserNotFoundException;
 import com.recoverysystem.exception.WaitlistAnchorNotScheduledException;
 import com.recoverysystem.exception.WaitlistAnchorOwnershipException;
 import com.recoverysystem.exception.WaitlistAppointmentTypeMismatchException;
@@ -103,6 +107,18 @@ public class GlobalExceptionHandler {
         return error(HttpStatus.NOT_FOUND, "SLOT_OFFER_NOT_FOUND", exception, request);
     }
 
+    @ExceptionHandler(SpecialtyNotFoundException.class)
+    ResponseEntity<ApiErrorResponse> handleSpecialtyNotFound(
+            SpecialtyNotFoundException exception, HttpServletRequest request) {
+        return error(HttpStatus.NOT_FOUND, "SPECIALTY_NOT_FOUND", exception, request);
+    }
+
+    @ExceptionHandler(UserNotFoundException.class)
+    ResponseEntity<ApiErrorResponse> handleUserNotFound(
+            UserNotFoundException exception, HttpServletRequest request) {
+        return error(HttpStatus.NOT_FOUND, "USER_NOT_FOUND", exception, request);
+    }
+
     @ExceptionHandler(WaitlistEntryNotFoundException.class)
     ResponseEntity<ApiErrorResponse> handleWaitlistEntryNotFound(
             WaitlistEntryNotFoundException exception, HttpServletRequest request) {
@@ -125,6 +141,22 @@ public class GlobalExceptionHandler {
     ResponseEntity<ApiErrorResponse> handleDuplicateEmail(
             DuplicateEmailException exception, HttpServletRequest request) {
         return error(HttpStatus.CONFLICT, "DUPLICATE_EMAIL", exception, request);
+    }
+
+    @ExceptionHandler(InvalidProviderUserRoleException.class)
+    ResponseEntity<ApiErrorResponse> handleInvalidProviderUserRole(
+            InvalidProviderUserRoleException exception, HttpServletRequest request) {
+        return error(HttpStatus.CONFLICT, "INVALID_PROVIDER_USER_ROLE", exception, request);
+    }
+
+    @ExceptionHandler(UserAlreadyLinkedToProviderException.class)
+    ResponseEntity<ApiErrorResponse> handleUserAlreadyLinkedToProvider(
+            UserAlreadyLinkedToProviderException exception, HttpServletRequest request) {
+        return error(
+                HttpStatus.CONFLICT,
+                "USER_ALREADY_LINKED_TO_PROVIDER",
+                exception,
+                request);
     }
 
     @ExceptionHandler(OfferAlreadyAcceptedException.class)
