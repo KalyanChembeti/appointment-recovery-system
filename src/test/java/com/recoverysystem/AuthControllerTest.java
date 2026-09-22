@@ -7,6 +7,8 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -107,6 +109,25 @@ class AuthControllerTest {
         User savedUser = userRepository.findByEmail(email).orElseThrow();
         registration.andExpect(jsonPath("$.userId").value(savedUser.getId()));
         assertEquals(UserRole.PATIENT, savedUser.getRole());
+    }
+
+    @Test
+    void currentUserReturnsAuthenticatedIdentityForEveryRole() throws Exception {
+        for (UserRole role : UserRole.values()) {
+            User savedUser = saveUser(uniqueEmail("current-" + role.name().toLowerCase()), role);
+
+            mockMvc.perform(get("/api/auth/me")
+                            .with(user(new AuthenticatedUser(savedUser))))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.userId").value(savedUser.getId()))
+                    .andExpect(jsonPath("$.role").value(role.name()));
+        }
+    }
+
+    @Test
+    void unauthenticatedCurrentUserIsUnauthorized() throws Exception {
+        mockMvc.perform(get("/api/auth/me"))
+                .andExpect(status().isUnauthorized());
     }
 
     @Test

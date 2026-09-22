@@ -18,6 +18,7 @@ import org.springframework.security.web.authentication.HttpStatusEntryPoint;
 import org.springframework.security.web.authentication.session.ChangeSessionIdAuthenticationStrategy;
 import org.springframework.security.web.authentication.session.SessionAuthenticationStrategy;
 import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
+import org.springframework.security.web.csrf.CsrfTokenRequestAttributeHandler;
 import org.springframework.security.web.context.HttpSessionSecurityContextRepository;
 import org.springframework.security.web.context.SecurityContextRepository;
 import org.springframework.security.web.util.matcher.AntPathRequestMatcher;
@@ -60,13 +61,24 @@ public class SecurityConfiguration {
     SecurityFilterChain securityFilterChain(
             HttpSecurity http,
             AppointmentAccessDeniedHandler appointmentAccessDeniedHandler) throws Exception {
-        http.csrf(csrf -> csrf.csrfTokenRepository(
-                        CookieCsrfTokenRepository.withHttpOnlyFalse()))
+        CsrfTokenRequestAttributeHandler requestHandler =
+                new CsrfTokenRequestAttributeHandler();
+        http.csrf(csrf -> csrf
+                        .csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse())
+                        // A JavaScript SPA reads the raw cookie and echoes it in a header.
+                        // Opting out of Spring Security 6's default BREACH protection is an
+                        // accepted trade-off here because that protection targets secrets
+                        // embedded in compressible HTML responses, which this API does not do.
+                        .csrfTokenRequestHandler(requestHandler))
                 .sessionManagement(session -> session
                         // Spring Security recommends changeSessionId; keep it explicit here.
                         .sessionFixation(fixation -> fixation.changeSessionId())
                         .sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED))
                 .authorizeHttpRequests(authorize -> authorize
+                        .requestMatchers(HttpMethod.GET, "/api/auth/csrf")
+                        .permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/auth/me")
+                        .hasAnyRole("PATIENT", "PROVIDER", "RECEPTIONIST", "ADMIN")
                         // This is the first real per-role endpoint rule. The permitAll fallback
                         // remains deliberate for paths awaiting their own controller stage.
                         .requestMatchers(HttpMethod.GET, "/api/appointments")

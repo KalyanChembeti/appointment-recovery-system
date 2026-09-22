@@ -223,11 +223,22 @@ repository-hygiene change and verify `.gitignore` keeps future build output untr
 
 ## Phase 2 - user interface and delivery
 
-### React and TypeScript frontend
+### Add real-browser authentication integration coverage
 
-The README names React, TypeScript, and Vite as later work; no frontend directory or
-JavaScript package manifest exists. Build it after REST and session contracts stabilize so
-the UI consumes real endpoint/authentication behavior.
+**Current evidence.** Stage 1 unit tests cover fetch configuration, CSRF headers, error
+normalization, and login UI state. A Node test runner cannot faithfully prove browser cookie
+storage, HttpOnly enforcement, SameSite behavior, or Vite proxy forwarding together.
+
+**Required follow-up.** Add a Playwright browser test that runs the UI and backend and
+proves login, CSRF bootstrap, `SESSION` persistence, and authenticated `/api` proxy requests
+as one flow. Keep this separate from Vitest's unit-level mocks.
+
+### Expand the React and TypeScript frontend
+
+Stage 1 now provides a separate React 18, TypeScript, and Vite build with a typed API
+client, authentication context, and login screen. Add later workflow pages only after their
+UI contracts are defined; routing and broader client state management remain unnecessary
+while login is the sole screen.
 
 ### Local application containers
 
