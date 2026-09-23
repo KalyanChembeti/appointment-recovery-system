@@ -1,27 +1,32 @@
 import type { PropsWithChildren } from 'react'
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
-import './App.css'
 import { HomePage } from './HomePage'
 import { AuthProvider } from './auth/AuthContext'
 import { LoginPage } from './auth/LoginPage'
 import { RegisterPage } from './auth/RegisterPage'
 import { useAuth } from './auth/authState'
+import { Card } from './components/Card'
+import { LoadingState } from './components/LoadingState'
+import { PageLayout } from './components/PageLayout'
 import { ProtectedRoute } from './routing/ProtectedRoute'
 
 function PublicOnlyRoute({ children }: PropsWithChildren) {
   const { user, isInitializing } = useAuth()
-  if (isInitializing) return <p role="status">Loading...</p>
+  if (isInitializing) return <LoadingState />
   return user ? <Navigate to="/" replace /> : children
 }
 
 function NotAuthorizedPage() {
   return (
-    <main className="auth-shell">
-      <section className="auth-card" aria-labelledby="not-authorized-heading">
-        <h1 id="not-authorized-heading">Not authorized</h1>
-        <p className="supporting-copy">Your account cannot access this page.</p>
-      </section>
-    </main>
+    <PageLayout>
+      <div className="mx-auto max-w-xl py-10">
+        <Card>
+          <p className="mb-2 text-xs font-bold uppercase tracking-[0.16em] text-brand">Access restricted</p>
+          <h1 id="not-authorized-heading" className="text-3xl font-bold tracking-tight text-ink">Not authorized</h1>
+          <p className="mt-3 text-muted">Your account cannot access this page.</p>
+        </Card>
+      </div>
+    </PageLayout>
   )
 }
 
