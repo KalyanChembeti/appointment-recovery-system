@@ -5,6 +5,7 @@ import { AuthProvider } from './auth/AuthContext'
 import { LoginPage } from './auth/LoginPage'
 import { RegisterPage } from './auth/RegisterPage'
 import { useAuth } from './auth/authState'
+import { BookingPage } from './booking/BookingPage'
 import { Card } from './components/Card'
 import { LoadingState } from './components/LoadingState'
 import { PageLayout } from './components/PageLayout'
@@ -38,6 +39,14 @@ function App() {
           <Route path="/login" element={<PublicOnlyRoute><LoginPage /></PublicOnlyRoute>} />
           <Route path="/register" element={<PublicOnlyRoute><RegisterPage /></PublicOnlyRoute>} />
           <Route path="/not-authorized" element={<NotAuthorizedPage />} />
+          <Route
+            path="/book"
+            element={(
+              <ProtectedRoute allowedRoles={['PATIENT']}>
+                <BookingPage />
+              </ProtectedRoute>
+            )}
+          />
           <Route path="/" element={<ProtectedRoute><HomePage /></ProtectedRoute>} />
         </Routes>
       </BrowserRouter>

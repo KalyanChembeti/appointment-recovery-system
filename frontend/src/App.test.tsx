@@ -53,4 +53,19 @@ describe('authenticated routing', () => {
       '/api/auth/logout',
     ])
   })
+
+  it('blocks the booking route for an authenticated non-patient role', async () => {
+    window.history.pushState({}, '', '/book')
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(
+      jsonResponse({ userId: 83, role: 'PROVIDER' }),
+    ))
+
+    render(<App />)
+
+    expect(await screen.findByRole('heading', { name: 'Not authorized' }))
+      .toBeInTheDocument()
+    expect(window.location.pathname).toBe('/not-authorized')
+    expect(screen.queryByRole('heading', { name: 'Book an appointment' }))
+      .not.toBeInTheDocument()
+  })
 })

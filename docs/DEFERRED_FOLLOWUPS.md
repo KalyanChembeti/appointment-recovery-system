@@ -240,6 +240,14 @@ client, authentication context, and login screen. Add later workflow pages only 
 UI contracts are defined; routing and broader client state management remain unnecessary
 while login is the sole screen.
 
+### Add receptionist-on-behalf booking after patient search exists
+
+**Stage 2B scope boundary.** The booking screen deliberately supports PATIENT self-booking
+only. Receptionist-on-behalf booking remains deferred because the backend has no authenticated
+patient list or search capability from which staff can select the intended patient. Define and
+secure that lookup contract before adding the receptionist flow; do not accept a freely entered
+patient ID as a substitute.
+
 ### Local application containers
 
 `docker-compose.yml` currently starts PostgreSQL 15 only. Add the Spring Boot application

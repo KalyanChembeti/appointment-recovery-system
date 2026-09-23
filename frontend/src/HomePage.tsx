@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom'
 import { Card } from './components/Card'
 import { PageLayout } from './components/PageLayout'
 import { useAuth } from './auth/authState'
@@ -5,16 +6,23 @@ import { useAuth } from './auth/authState'
 export function HomePage() {
   const { user } = useAuth()
 
-  // This shared home page only proves session restoration, route protection, and logout.
-  // Role-specific dashboards and workflow screens are added in later stages.
   return (
     <PageLayout>
       <div className="mx-auto max-w-3xl py-6 sm:py-10">
         <p className="mb-3 text-xs font-bold uppercase tracking-[0.16em] text-brand">Your workspace</p>
         <h1 className="text-4xl font-bold tracking-tight text-ink sm:text-5xl">Welcome back</h1>
         <p className="mt-4 max-w-2xl text-lg leading-8 text-muted">
-          Your secure appointment recovery workspace is ready. Scheduling tools will appear here in the next stage.
+          Your secure appointment recovery workspace is ready.
         </p>
+
+        {user?.role === 'PATIENT' && (
+          <Link
+            className="mt-7 inline-flex min-h-11 items-center justify-center rounded-xl bg-accent px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-accent-strong focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-brand/30"
+            to="/book"
+          >
+            Book an appointment
+          </Link>
+        )}
 
         <Card className="mt-8">
           <div className="flex items-start gap-4">
