@@ -28,6 +28,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
   // This is only an in-memory mirror. The real identity remains in the HttpOnly SESSION
   // cookie and is restored from the backend whenever this provider mounts.
   const [user, setUser] = useState<AuthenticatedUser | null>(null)
+  const [isInitializing, setIsInitializing] = useState(true)
   const [loginState, setLoginState] = useState<OperationState>(IDLE_STATE)
   const [registerState, setRegisterState] = useState<OperationState>(IDLE_STATE)
   const [logoutState, setLogoutState] = useState<OperationState>(IDLE_STATE)
@@ -40,6 +41,9 @@ export function AuthProvider({ children }: PropsWithChildren) {
       })
       .catch(() => {
         if (active) setUser(null)
+      })
+      .finally(() => {
+        if (active) setIsInitializing(false)
       })
     return () => { active = false }
   }, [])
@@ -80,6 +84,15 @@ export function AuthProvider({ children }: PropsWithChildren) {
     }
   }
 
-  const value = { user, loginState, registerState, logoutState, login, register, logout }
+  const value = {
+    user,
+    isInitializing,
+    loginState,
+    registerState,
+    logoutState,
+    login,
+    register,
+    logout,
+  }
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }

@@ -110,6 +110,15 @@
 
 .confirmation { margin-top: 0.25rem; }
 
+.auth-navigation {
+  margin: 1.25rem 0 0;
+  color: #52665f;
+  font-size: 0.92rem;
+  text-align: center;
+}
+
+.auth-navigation a { color: #155d50; font-weight: 700; }
+
 @media (max-width: 32rem) {
   .auth-shell { align-items: start; padding-top: 1rem; }
   .auth-card { border-radius: 1rem; }

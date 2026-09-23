@@ -5,6 +5,7 @@ export type AuthenticatedUser = { userId: number; role: UserRole }
 export type OperationState = { loading: boolean; error: ApiError | null }
 export type AuthContextValue = {
   user: AuthenticatedUser | null
+  isInitializing: boolean
   loginState: OperationState
   registerState: OperationState
   logoutState: OperationState

@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import App from '../App'
@@ -12,6 +12,7 @@ function jsonResponse(body: unknown, status = 200): Response {
 
 describe('LoginPage', () => {
   beforeEach(() => {
+    window.history.pushState({}, '', '/login')
     document.cookie = 'XSRF-TOKEN=login-test-token; Path=/'
   })
   afterEach(() => {
@@ -33,9 +34,7 @@ describe('LoginPage', () => {
     vi.stubGlobal('fetch', fetchMock)
     const user = userEvent.setup()
     render(<App />)
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1))
-
-    await user.type(screen.getByLabelText('Email address'), 'patient@example.com')
+    await user.type(await screen.findByLabelText('Email address'), 'patient@example.com')
     await user.type(screen.getByLabelText('Password'), 'ValidPass1!')
     await user.click(screen.getByRole('button', { name: 'Sign in' }))
 
@@ -56,9 +55,7 @@ describe('LoginPage', () => {
     vi.stubGlobal('fetch', fetchMock)
     const user = userEvent.setup()
     render(<App />)
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1))
-
-    await user.type(screen.getByLabelText('Email address'), 'patient@example.com')
+    await user.type(await screen.findByLabelText('Email address'), 'patient@example.com')
     await user.type(screen.getByLabelText('Password'), 'wrong-password')
     await user.click(screen.getByRole('button', { name: 'Sign in' }))
 
