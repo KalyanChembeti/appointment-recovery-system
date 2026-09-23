@@ -24,8 +24,6 @@ import com.recoverysystem.repository.ProviderUnavailabilityRepository;
 import com.recoverysystem.repository.SpecialtyRepository;
 import com.recoverysystem.repository.UserRepository;
 import com.recoverysystem.security.AuthenticatedUser;
-import com.recoverysystem.service.RecoveryWorkerService;
-import com.recoverysystem.service.SlotOfferExpiryWorkerService;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalTime;
@@ -36,7 +34,6 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -93,12 +90,6 @@ class AvailabilityControllerTest {
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
-
-    @MockBean
-    private RecoveryWorkerService recoveryWorkerService;
-
-    @MockBean
-    private SlotOfferExpiryWorkerService slotOfferExpiryWorkerService;
 
     @BeforeEach
     void clearWorkflowData() {
