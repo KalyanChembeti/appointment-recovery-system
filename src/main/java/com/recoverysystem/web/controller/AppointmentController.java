@@ -71,15 +71,13 @@ public class AppointmentController {
         // Deliberately no status filter: the scoped history includes scheduled and resolved
         // appointments because FR-APT-3 does not restrict the listing to active records.
         // The MVP returns the full unbounded scope; pagination can be added when volume warrants it.
-        List<Appointment> appointments = switch (authenticatedUser.getRole()) {
-            case PATIENT -> appointmentRepository.findByPatientId(authenticatedUser.getUserId());
-            case PROVIDER -> appointmentRepository.findByProviderId(
+        List<AppointmentResponse> response = switch (authenticatedUser.getRole()) {
+            case PATIENT -> appointmentRepository.findResponsesByPatientId(
+                    authenticatedUser.getUserId());
+            case PROVIDER -> appointmentRepository.findResponsesByProviderId(
                     findProvider(authenticatedUser).getId());
-            case RECEPTIONIST, ADMIN -> appointmentRepository.findAll();
+            case RECEPTIONIST, ADMIN -> appointmentRepository.findAllResponses();
         };
-        List<AppointmentResponse> response = appointments.stream()
-                .map(AppointmentResponse::from)
-                .toList();
         return ResponseEntity.ok(response);
     }
 
@@ -87,9 +85,9 @@ public class AppointmentController {
     ResponseEntity<AppointmentResponse> getAppointment(
             @PathVariable Long id,
             @AuthenticationPrincipal AuthenticatedUser authenticatedUser) {
-        Appointment appointment = findAppointment(id);
-        verifyReadAccess(appointment, authenticatedUser);
-        return ResponseEntity.ok(AppointmentResponse.from(appointment));
+        AppointmentResponse response = findAppointmentResponse(id);
+        verifyReadAccess(response, authenticatedUser);
+        return ResponseEntity.ok(response);
     }
 
     @PostMapping
@@ -105,7 +103,7 @@ public class AppointmentController {
                 request.startAt(),
                 authenticatedUser.getUserId());
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(AppointmentResponse.from(appointment));
+                .body(findAppointmentResponse(appointment.getId()));
     }
 
     @PostMapping("/{id}/cancel")
@@ -122,7 +120,7 @@ public class AppointmentController {
                 cancellationReason,
                 authenticatedUser.getUserId(),
                 request.reasonText());
-        return ResponseEntity.ok(AppointmentResponse.from(appointment));
+        return ResponseEntity.ok(findAppointmentResponse(appointment.getId()));
     }
 
     @PostMapping("/{id}/reschedule")
@@ -139,7 +137,7 @@ public class AppointmentController {
                 request.appointmentTypeId(),
                 request.startAt(),
                 authenticatedUser.getUserId());
-        return ResponseEntity.ok(AppointmentResponse.from(appointment));
+        return ResponseEntity.ok(findAppointmentResponse(appointment.getId()));
     }
 
     @PostMapping("/{id}/complete")
@@ -148,7 +146,7 @@ public class AppointmentController {
             @AuthenticationPrincipal AuthenticatedUser authenticatedUser) {
         Appointment appointment = appointmentCompletionService.completeAppointment(
                 id, authenticatedUser.getUserId());
-        return ResponseEntity.ok(AppointmentResponse.from(appointment));
+        return ResponseEntity.ok(findAppointmentResponse(appointment.getId()));
     }
 
     @PostMapping("/{id}/mark-no-show")
@@ -157,7 +155,7 @@ public class AppointmentController {
             @AuthenticationPrincipal AuthenticatedUser authenticatedUser) {
         Appointment appointment = appointmentNoShowService.markNoShow(
                 id, authenticatedUser.getUserId());
-        return ResponseEntity.ok(AppointmentResponse.from(appointment));
+        return ResponseEntity.ok(findAppointmentResponse(appointment.getId()));
     }
 
     private Appointment findAppointment(Long appointmentId) {
@@ -165,16 +163,21 @@ public class AppointmentController {
                 .orElseThrow(() -> new AppointmentNotFoundException(appointmentId));
     }
 
+    private AppointmentResponse findAppointmentResponse(Long appointmentId) {
+        return appointmentRepository.findResponseById(appointmentId)
+                .orElseThrow(() -> new AppointmentNotFoundException(appointmentId));
+    }
+
     private void verifyReadAccess(
-            Appointment appointment, AuthenticatedUser authenticatedUser) {
+            AppointmentResponse appointment, AuthenticatedUser authenticatedUser) {
         switch (authenticatedUser.getRole()) {
             case PATIENT -> effectivePatientIdResolver.verifyOwnership(
-                    authenticatedUser.getUserId(), appointment.getPatientId());
+                    authenticatedUser.getUserId(), appointment.patientId());
             case PROVIDER -> {
                 Long providerId = findProvider(authenticatedUser).getId();
-                if (!providerId.equals(appointment.getProviderId())) {
+                if (!providerId.equals(appointment.providerId())) {
                     throw AppointmentOwnershipException.forProvider(
-                            providerId, appointment.getProviderId());
+                            providerId, appointment.providerId());
                 }
             }
             case RECEPTIONIST, ADMIN -> {

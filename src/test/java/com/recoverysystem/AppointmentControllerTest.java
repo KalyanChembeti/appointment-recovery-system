@@ -139,7 +139,9 @@ class AppointmentControllerTest {
                 .andExpect(jsonPath("$.startAt").value(fixture.startAt().toString()))
                 .andExpect(jsonPath("$.endAt")
                         .value(fixture.startAt().plusSeconds(3_600).toString()))
-                .andExpect(jsonPath("$.status").value(AppointmentStatus.SCHEDULED.name()));
+                .andExpect(jsonPath("$.status").value(AppointmentStatus.SCHEDULED.name()))
+                .andExpect(jsonPath("$.patientDisplayName")
+                        .value(fixture.firstPatient().getDisplayName()));
 
         Appointment appointment = appointmentRepository.findAll().getFirst();
         List<AuditLog> audits = auditLogRepository.findAll();
@@ -268,7 +270,9 @@ class AppointmentControllerTest {
         performCancel(fixture.firstPatient(), appointment.getId(), "{}", true)
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.id").value(appointment.getId()))
-                .andExpect(jsonPath("$.status").value(AppointmentStatus.CANCELLED.name()));
+                .andExpect(jsonPath("$.status").value(AppointmentStatus.CANCELLED.name()))
+                .andExpect(jsonPath("$.patientDisplayName")
+                        .value(fixture.firstPatient().getDisplayName()));
 
         Appointment persisted = appointmentRepository.findById(appointment.getId()).orElseThrow();
         assertEquals(AppointmentStatus.CANCELLED, persisted.getStatus());
@@ -360,6 +364,8 @@ class AppointmentControllerTest {
                 .andExpect(jsonPath("$.appointmentTypeId")
                         .value(fixture.appointmentType().getId()))
                 .andExpect(jsonPath("$.startAt").value(newStartAt.toString()))
+                .andExpect(jsonPath("$.patientDisplayName")
+                        .value(fixture.firstPatient().getDisplayName()))
                 .andReturn();
 
         Long newAppointmentId = responseAppointmentId(result);
@@ -502,7 +508,9 @@ class AppointmentControllerTest {
         performAppointmentAction(receptionist, appointment.getId(), "complete", true)
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.id").value(appointment.getId()))
-                .andExpect(jsonPath("$.status").value(AppointmentStatus.COMPLETED.name()));
+                .andExpect(jsonPath("$.status").value(AppointmentStatus.COMPLETED.name()))
+                .andExpect(jsonPath("$.patientDisplayName")
+                        .value(fixture.firstPatient().getDisplayName()));
 
         Appointment persisted = appointmentRepository.findById(appointment.getId()).orElseThrow();
         assertEquals(AppointmentStatus.COMPLETED, persisted.getStatus());
@@ -551,7 +559,9 @@ class AppointmentControllerTest {
         performAppointmentAction(receptionist, appointment.getId(), "mark-no-show", true)
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.id").value(appointment.getId()))
-                .andExpect(jsonPath("$.status").value(AppointmentStatus.NO_SHOW.name()));
+                .andExpect(jsonPath("$.status").value(AppointmentStatus.NO_SHOW.name()))
+                .andExpect(jsonPath("$.patientDisplayName")
+                        .value(fixture.firstPatient().getDisplayName()));
 
         Appointment persisted = appointmentRepository.findById(appointment.getId()).orElseThrow();
         assertEquals(AppointmentStatus.NO_SHOW, persisted.getStatus());
@@ -685,7 +695,27 @@ class AppointmentControllerTest {
                 .andExpect(jsonPath("$.startAt").value(fixture.startAt().toString()))
                 .andExpect(jsonPath("$.endAt")
                         .value(fixture.startAt().plusSeconds(3_600).toString()))
-                .andExpect(jsonPath("$.status").value(AppointmentStatus.SCHEDULED.name()));
+                .andExpect(jsonPath("$.status").value(AppointmentStatus.SCHEDULED.name()))
+                .andExpect(jsonPath("$.patientDisplayName")
+                        .value(fixture.firstPatient().getDisplayName()));
+    }
+
+    @Test
+    void appointmentResponsePreservesNullPatientDisplayName() throws Exception {
+        BookingFixture fixture = createFixture();
+        fixture.firstPatient().setDisplayName(null);
+        userRepository.saveAndFlush(fixture.firstPatient());
+        Appointment appointment = saveScheduledAppointment(
+                fixture, fixture.firstPatient(), fixture.startAt());
+
+        MvcResult result = performAppointmentGet(
+                        fixture.firstPatient(), appointment.getId())
+                .andExpect(status().isOk())
+                .andReturn();
+        AppointmentResponse response = objectMapper.readValue(
+                result.getResponse().getContentAsByteArray(), AppointmentResponse.class);
+
+        assertNull(response.patientDisplayName());
     }
 
     @Test
@@ -836,6 +866,21 @@ class AppointmentControllerTest {
         assertEquals(
                 Set.of(firstAppointment.getId(), secondAppointment.getId()),
                 responseAppointmentIds(result));
+        List<AppointmentResponse> appointments = responseAppointments(result);
+        assertEquals(
+                firstFixture.firstPatient().getDisplayName(),
+                appointments.stream()
+                        .filter(response -> response.id().equals(firstAppointment.getId()))
+                        .findFirst()
+                        .orElseThrow()
+                        .patientDisplayName());
+        assertEquals(
+                secondFixture.secondPatient().getDisplayName(),
+                appointments.stream()
+                        .filter(response -> response.id().equals(secondAppointment.getId()))
+                        .findFirst()
+                        .orElseThrow()
+                        .patientDisplayName());
     }
 
     @Test
