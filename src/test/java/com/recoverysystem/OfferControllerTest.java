@@ -239,7 +239,15 @@ class OfferControllerTest {
                         .value(fixture.waitlistEntry().getId()))
                 .andExpect(jsonPath("$.status").value(SlotOfferStatus.DECLINED.name()))
                 .andExpect(jsonPath("$.expiresAt").isNotEmpty())
-                .andExpect(jsonPath("$.acceptedAt").doesNotExist());
+                .andExpect(jsonPath("$.acceptedAt").doesNotExist())
+                .andExpect(jsonPath("$.providerId")
+                        .value(fixture.sourceAppointment().getProviderId()))
+                .andExpect(jsonPath("$.appointmentTypeId")
+                        .value(fixture.sourceAppointment().getAppointmentTypeId()))
+                .andExpect(jsonPath("$.startAt")
+                        .value(fixture.sourceAppointment().getStartAt().toString()))
+                .andExpect(jsonPath("$.endAt")
+                        .value(fixture.sourceAppointment().getEndAt().toString()));
 
         SlotOffer persisted = slotOfferRepository
                 .findById(fixture.slotOffer().getId())
@@ -360,6 +368,29 @@ class OfferControllerTest {
                 Set.copyOf(offers.stream().map(SlotOfferResponse::status).toList()));
         assertFalse(offers.stream().anyMatch(offer ->
                 offer.id().equals(anotherPatientsOffer.slotOffer().getId())));
+    }
+
+    @Test
+    void patientOfferListIncludesSourceAppointmentSlotDetails() throws Exception {
+        OfferFixture fixture = createOfferFixture(
+                SlotOfferStatus.OFFERED, Instant.now().plusSeconds(3_600));
+
+        MvcResult result = performList(fixture.patient())
+                .andExpect(status().isOk())
+                .andReturn();
+        List<SlotOfferResponse> offers = objectMapper
+                .readerForListOf(SlotOfferResponse.class)
+                .readValue(result.getResponse().getContentAsByteArray());
+        SlotOfferResponse response = offers.getFirst();
+
+        assertEquals(fixture.sourceAppointment().getProviderId(), response.providerId());
+        assertEquals(
+                fixture.sourceAppointment().getAppointmentTypeId(),
+                response.appointmentTypeId());
+        assertEquals(fixture.sourceAppointment().getStartAt(), response.startAt());
+        assertEquals(fixture.sourceAppointment().getEndAt(), response.endAt());
+        assertNotEquals(fixture.oldAppointment().getProviderId(), response.providerId());
+        assertNotEquals(fixture.oldAppointment().getStartAt(), response.startAt());
     }
 
     @Test

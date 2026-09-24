@@ -1,0 +1,4 @@
+-------------------------------------------------------------------------------
+Test set: com.recoverysystem.OfferAcceptanceOrchestratorTest
+-------------------------------------------------------------------------------
+Tests run: 16, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 3.536 s -- in com.recoverysystem.OfferAcceptanceOrchestratorTest

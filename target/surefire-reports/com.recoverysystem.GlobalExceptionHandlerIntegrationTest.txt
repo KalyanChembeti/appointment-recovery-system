@@ -1,0 +1,4 @@
+-------------------------------------------------------------------------------
+Test set: com.recoverysystem.GlobalExceptionHandlerIntegrationTest
+-------------------------------------------------------------------------------
+Tests run: 40, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 3.345 s -- in com.recoverysystem.GlobalExceptionHandlerIntegrationTest

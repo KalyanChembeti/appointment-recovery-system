@@ -26,6 +26,9 @@ spring:
 
   session:
     store-type: jdbc
+    jdbc:
+      # Flyway V4 is the sole owner of the Spring Session schema.
+      initialize-schema: never
     timeout: 30m
 
 server:
@@ -35,6 +38,8 @@ server:
       cookie:
         http-only: true
         same-site: lax
+        # Local development uses HTTP; production must override this to true.
+        secure: false
       timeout: 30m
 
 # Application-specific configuration.

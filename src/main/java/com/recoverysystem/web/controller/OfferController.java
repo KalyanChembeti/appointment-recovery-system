@@ -54,10 +54,7 @@ public class OfferController {
     ResponseEntity<List<SlotOfferResponse>> listOffers(
             @AuthenticationPrincipal AuthenticatedUser authenticatedUser) {
         List<SlotOfferResponse> response = slotOfferRepository
-                .findAllForPatient(authenticatedUser.getUserId())
-                .stream()
-                .map(SlotOfferResponse::from)
-                .toList();
+                .findAllForPatient(authenticatedUser.getUserId());
         return ResponseEntity.ok(response);
     }
 
@@ -93,9 +90,10 @@ public class OfferController {
                     throw new ProviderActionNotPermittedException(authenticatedUser.getRole());
         }
 
-        SlotOffer declinedOffer = slotOfferDeclineService.declineOffer(
-                id, authenticatedUser.getUserId());
-        return ResponseEntity.ok(SlotOfferResponse.from(declinedOffer));
+        slotOfferDeclineService.declineOffer(id, authenticatedUser.getUserId());
+        SlotOfferResponse response = slotOfferRepository.findResponseById(id)
+                .orElseThrow(() -> new SlotOfferNotFoundException(id));
+        return ResponseEntity.ok(response);
     }
 
     private SlotOffer findSlotOffer(Long slotOfferId) {

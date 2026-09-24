@@ -1,0 +1,4 @@
+-------------------------------------------------------------------------------
+Test set: com.recoverysystem.SlotOfferDeclineServiceTest
+-------------------------------------------------------------------------------
+Tests run: 8, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 2.565 s -- in com.recoverysystem.SlotOfferDeclineServiceTest

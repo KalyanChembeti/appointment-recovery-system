@@ -2,6 +2,7 @@ package com.recoverysystem.repository;
 
 import com.recoverysystem.domain.entity.SlotOffer;
 import com.recoverysystem.domain.enums.SlotOfferStatus;
+import com.recoverysystem.web.dto.SlotOfferResponse;
 import jakarta.persistence.LockModeType;
 import java.time.Instant;
 import java.util.List;
@@ -15,8 +16,20 @@ import org.springframework.data.repository.query.Param;
 public interface SlotOfferRepository extends JpaRepository<SlotOffer, Long> {
 
     @Query("""
-            SELECT so
+            SELECT new com.recoverysystem.web.dto.SlotOfferResponse(
+                so.id,
+                so.recoveryJobId,
+                so.waitlistEntryId,
+                so.status,
+                so.expiresAt,
+                so.acceptedAt,
+                sourceAppointment.providerId,
+                sourceAppointment.appointmentTypeId,
+                sourceAppointment.startAt,
+                sourceAppointment.endAt)
             FROM SlotOffer so
+            JOIN RecoveryJob job ON job.id = so.recoveryJobId
+            JOIN Appointment sourceAppointment ON sourceAppointment.id = job.sourceAppointmentId
             WHERE EXISTS (
                 SELECT 1
                 FROM WaitlistEntry entry
@@ -25,7 +38,26 @@ public interface SlotOfferRepository extends JpaRepository<SlotOffer, Long> {
             )
             ORDER BY so.id ASC
             """)
-    List<SlotOffer> findAllForPatient(@Param("patientId") Long patientId);
+    List<SlotOfferResponse> findAllForPatient(@Param("patientId") Long patientId);
+
+    @Query("""
+            SELECT new com.recoverysystem.web.dto.SlotOfferResponse(
+                so.id,
+                so.recoveryJobId,
+                so.waitlistEntryId,
+                so.status,
+                so.expiresAt,
+                so.acceptedAt,
+                sourceAppointment.providerId,
+                sourceAppointment.appointmentTypeId,
+                sourceAppointment.startAt,
+                sourceAppointment.endAt)
+            FROM SlotOffer so
+            JOIN RecoveryJob job ON job.id = so.recoveryJobId
+            JOIN Appointment sourceAppointment ON sourceAppointment.id = job.sourceAppointmentId
+            WHERE so.id = :id
+            """)
+    Optional<SlotOfferResponse> findResponseById(@Param("id") Long id);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT s FROM SlotOffer s WHERE s.id = :id")

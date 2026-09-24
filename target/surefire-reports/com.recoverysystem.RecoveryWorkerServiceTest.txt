@@ -1,0 +1,4 @@
+-------------------------------------------------------------------------------
+Test set: com.recoverysystem.RecoveryWorkerServiceTest
+-------------------------------------------------------------------------------
+Tests run: 12, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 4.091 s -- in com.recoverysystem.RecoveryWorkerServiceTest
