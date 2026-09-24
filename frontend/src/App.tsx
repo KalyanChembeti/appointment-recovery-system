@@ -6,6 +6,7 @@ import { LoginPage } from './auth/LoginPage'
 import { RegisterPage } from './auth/RegisterPage'
 import { useAuth } from './auth/authState'
 import { BookingPage } from './booking/BookingPage'
+import { MyAppointmentsPage } from './appointments/MyAppointmentsPage'
 import { Card } from './components/Card'
 import { LoadingState } from './components/LoadingState'
 import { PageLayout } from './components/PageLayout'
@@ -44,6 +45,14 @@ function App() {
             element={(
               <ProtectedRoute allowedRoles={['PATIENT']}>
                 <BookingPage />
+              </ProtectedRoute>
+            )}
+          />
+          <Route
+            path="/appointments"
+            element={(
+              <ProtectedRoute allowedRoles={['PATIENT']}>
+                <MyAppointmentsPage />
               </ProtectedRoute>
             )}
           />

@@ -14,6 +14,7 @@ import { Button } from '../components/Button'
 import { Card } from '../components/Card'
 import { FormField } from '../components/FormField'
 import { PageLayout } from '../components/PageLayout'
+import { AvailabilitySlotPicker } from './AvailabilitySlotPicker'
 import { bookingApi } from './bookingApi'
 
 const BOOKING_RACE_CODES = new Set([
@@ -22,14 +23,6 @@ const BOOKING_RACE_CODES = new Set([
 ])
 const BOOKING_RACE_MESSAGE =
   'This time is no longer available. Please choose another time.'
-
-function formatTime(instant: string) {
-  return new Intl.DateTimeFormat(undefined, {
-    hour: 'numeric',
-    minute: '2-digit',
-    timeZoneName: 'short',
-  }).format(new Date(instant))
-}
 
 function formatDateTime(instant: string) {
   return new Intl.DateTimeFormat(undefined, {
@@ -56,6 +49,7 @@ export function BookingPage() {
   const [selectedSlot, setSelectedSlot] = useState<TimeSlot | null>(null)
   const [booking, setBooking] = useState(false)
   const [bookingError, setBookingError] = useState<ApiError | null>(null)
+  const [availabilityRefreshKey, setAvailabilityRefreshKey] = useState(0)
   const [bookedAppointment, setBookedAppointment] =
     useState<AppointmentResponse | null>(null)
 
@@ -71,17 +65,6 @@ export function BookingPage() {
     [specialtyId],
   )
   const providersQuery = useApiQuery<ProviderListResponse[]>(providersPath, [specialtyId])
-  const availabilityPath: `/api/${string}` | null =
-    specialtyId && appointmentTypeId && providerId && date
-      ? `/api/availability?providerId=${encodeURIComponent(providerId)}&appointmentTypeId=${encodeURIComponent(appointmentTypeId)}&date=${encodeURIComponent(date)}`
-      : null
-  const availabilityQuery = useApiQuery<TimeSlot[]>(availabilityPath, [
-    specialtyId,
-    appointmentTypeId,
-    providerId,
-    date,
-  ])
-
   const selectedSpecialty = specialtiesQuery.data?.find(
     (specialty) => specialty.id === Number(specialtyId),
   )
@@ -135,7 +118,7 @@ export function BookingPage() {
       if (apiError.status === 409 && apiError.code && BOOKING_RACE_CODES.has(apiError.code)) {
         setBookingError({ ...apiError, message: BOOKING_RACE_MESSAGE })
         setSelectedSlot(null)
-        availabilityQuery.refetch()
+        setAvailabilityRefreshKey((key) => key + 1)
       } else {
         setBookingError(apiError)
       }
@@ -319,44 +302,17 @@ export function BookingPage() {
               <p className="mt-1 text-sm text-muted">
                 Available times for {date} with {selectedProviderLabel}.
               </p>
-              {availabilityQuery.loading && (
-                <p className="mt-5 text-sm font-medium text-muted" role="status">
-                  Loading available times...
-                </p>
-              )}
-              {availabilityQuery.error && (
-                <p className="mt-5 text-sm font-medium text-danger" role="alert">
-                  {availabilityQuery.error.message}
-                </p>
-              )}
-              {availabilityQuery.data?.length === 0 && (
-                <p className="mt-5 rounded-xl bg-soft px-4 py-3 text-sm font-medium text-muted">
-                  No available times for this date.
-                </p>
-              )}
-              {availabilityQuery.data && availabilityQuery.data.length > 0 && (
-                <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-3">
-                  {availabilityQuery.data.map((slot) => {
-                    const selected = selectedSlot?.startAt === slot.startAt
-                    return (
-                      <Button
-                        key={slot.startAt}
-                        type="button"
-                        variant="secondary"
-                        aria-label={`Select ${formatDateTime(slot.startAt)}`}
-                        aria-pressed={selected}
-                        className={selected ? 'ring-2 ring-brand ring-offset-2' : ''}
-                        onClick={() => {
-                          setSelectedSlot(slot)
-                          setBookingError(null)
-                        }}
-                      >
-                        {formatTime(slot.startAt)}
-                      </Button>
-                    )
-                  })}
-                </div>
-              )}
+              <AvailabilitySlotPicker
+                key={availabilityRefreshKey}
+                providerId={Number(providerId)}
+                appointmentTypeId={Number(appointmentTypeId)}
+                date={date}
+                selectedSlot={selectedSlot}
+                onSelectSlot={(slot) => {
+                  setSelectedSlot(slot)
+                  setBookingError(null)
+                }}
+              />
             </Card>
           )}
 

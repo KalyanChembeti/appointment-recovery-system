@@ -68,4 +68,19 @@ describe('authenticated routing', () => {
     expect(screen.queryByRole('heading', { name: 'Book an appointment' }))
       .not.toBeInTheDocument()
   })
+
+  it('blocks the appointments route for an authenticated non-patient role', async () => {
+    window.history.pushState({}, '', '/appointments')
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(
+      jsonResponse({ userId: 84, role: 'RECEPTIONIST' }),
+    ))
+
+    render(<App />)
+
+    expect(await screen.findByRole('heading', { name: 'Not authorized' }))
+      .toBeInTheDocument()
+    expect(window.location.pathname).toBe('/not-authorized')
+    expect(screen.queryByRole('heading', { name: 'My appointments' }))
+      .not.toBeInTheDocument()
+  })
 })

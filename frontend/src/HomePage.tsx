@@ -16,12 +16,20 @@ export function HomePage() {
         </p>
 
         {user?.role === 'PATIENT' && (
-          <Link
-            className="mt-7 inline-flex min-h-11 items-center justify-center rounded-xl bg-accent px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-accent-strong focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-brand/30"
-            to="/book"
-          >
-            Book an appointment
-          </Link>
+          <div className="mt-7 flex flex-wrap gap-3">
+            <Link
+              className="inline-flex min-h-11 items-center justify-center rounded-xl bg-accent px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-accent-strong focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-brand/30"
+              to="/book"
+            >
+              Book an appointment
+            </Link>
+            <Link
+              className="inline-flex min-h-11 items-center justify-center rounded-xl border border-border bg-surface px-4 py-2.5 text-sm font-semibold text-brand transition-colors hover:bg-brand-soft focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-brand/25"
+              to="/appointments"
+            >
+              My appointments
+            </Link>
+          </div>
         )}
 
         <Card className="mt-8">

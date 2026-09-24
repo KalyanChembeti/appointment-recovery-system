@@ -248,6 +248,13 @@ patient list or search capability from which staff can select the intended patie
 secure that lookup contract before adding the receptionist flow; do not accept a freely entered
 patient ID as a substitute.
 
+### Consider provider and appointment-type changes during rescheduling
+
+**Stage 2C scope boundary.** Patient rescheduling keeps the original provider and appointment
+type fixed and changes only the date and time. Changing either selection is equivalent to the
+already-supported cancel-and-book flow and would duplicate the Stage 2B cascading booking UI.
+Revisit a combined change flow only if later UX requirements justify that additional complexity.
+
 ### Local application containers
 
 `docker-compose.yml` currently starts PostgreSQL 15 only. Add the Spring Boot application

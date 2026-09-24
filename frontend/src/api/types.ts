@@ -56,6 +56,16 @@ export type BookAppointmentRequest = {
   startAt: string
 }
 
+export type CancelAppointmentRequest = {
+  reasonText?: string
+}
+
+export type RescheduleAppointmentRequest = {
+  providerId: number
+  appointmentTypeId: number
+  startAt: string
+}
+
 export type AppointmentResponse = {
   id: number
   patientId: number
