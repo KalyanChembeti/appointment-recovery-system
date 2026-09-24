@@ -29,6 +29,12 @@ export function HomePage() {
             >
               My appointments
             </Link>
+            <Link
+              className="inline-flex min-h-11 items-center justify-center rounded-xl border border-border bg-surface px-4 py-2.5 text-sm font-semibold text-brand transition-colors hover:bg-brand-soft focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-brand/25"
+              to="/offers"
+            >
+              My offers
+            </Link>
           </div>
         )}
 

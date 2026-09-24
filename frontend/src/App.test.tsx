@@ -83,4 +83,19 @@ describe('authenticated routing', () => {
     expect(screen.queryByRole('heading', { name: 'My appointments' }))
       .not.toBeInTheDocument()
   })
+
+  it('blocks the offers route for an authenticated non-patient role', async () => {
+    window.history.pushState({}, '', '/offers')
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(
+      jsonResponse({ userId: 85, role: 'ADMIN' }),
+    ))
+
+    render(<App />)
+
+    expect(await screen.findByRole('heading', { name: 'Not authorized' }))
+      .toBeInTheDocument()
+    expect(window.location.pathname).toBe('/not-authorized')
+    expect(screen.queryByRole('heading', { name: 'My offers' }))
+      .not.toBeInTheDocument()
+  })
 })

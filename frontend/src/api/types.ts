@@ -75,3 +75,34 @@ export type AppointmentResponse = {
   endAt: string
   status: string
 }
+
+export type SlotOfferStatus =
+  | 'OFFERED'
+  | 'ACCEPTED'
+  | 'DECLINED'
+  | 'EXPIRED'
+  | 'CANCELLED'
+
+export type SlotOfferResponse = {
+  id: number
+  recoveryJobId: number
+  waitlistEntryId: number
+  status: SlotOfferStatus
+  expiresAt: string
+  acceptedAt: string | null
+  providerId: number
+  appointmentTypeId: number
+  startAt: string
+  endAt: string
+}
+
+export type AcceptOfferResponse = {
+  slotOfferId: number
+  status: 'ACCEPTED'
+  appointmentId: number
+  patientId: number
+  providerId: number
+  appointmentTypeId: number
+  startAt: string
+  endAt: string
+}
