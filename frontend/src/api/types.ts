@@ -45,12 +45,19 @@ export type ProviderListResponse = {
   displayName: string | null
 }
 
+export type PatientSearchResponse = {
+  id: number
+  email: string
+  displayName: string | null
+}
+
 export type TimeSlot = {
   startAt: string
   endAt: string
 }
 
 export type BookAppointmentRequest = {
+  patientId?: number
   providerId: number
   appointmentTypeId: number
   startAt: string

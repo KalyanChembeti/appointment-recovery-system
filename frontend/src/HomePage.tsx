@@ -38,14 +38,22 @@ export function HomePage() {
           </div>
         )}
 
-        {user?.role === 'ADMIN' && (
+        {(user?.role === 'RECEPTIONIST' || user?.role === 'ADMIN') && (
           <div className="mt-7 flex flex-wrap gap-3">
             <Link
               className="inline-flex min-h-11 items-center justify-center rounded-xl bg-accent px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-accent-strong focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-brand/30"
-              to="/provider-blocking"
+              to="/book-for-patient"
             >
-              Block provider time
+              Book for a patient
             </Link>
+            {user.role === 'ADMIN' && (
+              <Link
+                className="inline-flex min-h-11 items-center justify-center rounded-xl border border-border bg-surface px-4 py-2.5 text-sm font-semibold text-brand transition-colors hover:bg-brand-soft focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-brand/25"
+                to="/provider-blocking"
+              >
+                Block provider time
+              </Link>
+            )}
           </div>
         )}
 

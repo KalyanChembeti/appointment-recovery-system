@@ -31,6 +31,8 @@ describe('authenticated routing', () => {
     expect(await screen.findByText('Logged in as 81, role RECEPTIONIST')).toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: 'Sign in' })).not.toBeInTheDocument()
     expect(window.location.pathname).toBe('/')
+    expect(screen.getByRole('link', { name: 'Book for a patient' }))
+      .toHaveAttribute('href', '/book-for-patient')
     expect(screen.queryByRole('link', { name: 'Block provider time' }))
       .not.toBeInTheDocument()
   })
@@ -126,5 +128,41 @@ describe('authenticated routing', () => {
 
     expect(await screen.findByRole('link', { name: 'Block provider time' }))
       .toHaveAttribute('href', '/provider-blocking')
+    expect(screen.getByRole('link', { name: 'Book for a patient' }))
+      .toHaveAttribute('href', '/book-for-patient')
   })
+
+  it.each(['RECEPTIONIST', 'ADMIN'] as const)(
+    'allows the %s role to access the staff booking route',
+    async (role) => {
+      window.history.pushState({}, '', '/book-for-patient')
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue(
+        jsonResponse({ userId: 88, role }),
+      ))
+
+      render(<App />)
+
+      expect(await screen.findByRole('heading', { name: 'Book for a patient' }))
+        .toBeInTheDocument()
+      expect(window.location.pathname).toBe('/book-for-patient')
+    },
+  )
+
+  it.each(['PATIENT', 'PROVIDER'] as const)(
+    'blocks the %s role from the staff booking route',
+    async (role) => {
+      window.history.pushState({}, '', '/book-for-patient')
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue(
+        jsonResponse({ userId: 89, role }),
+      ))
+
+      render(<App />)
+
+      expect(await screen.findByRole('heading', { name: 'Not authorized' }))
+        .toBeInTheDocument()
+      expect(window.location.pathname).toBe('/not-authorized')
+      expect(screen.queryByRole('heading', { name: 'Book for a patient' }))
+        .not.toBeInTheDocument()
+    },
+  )
 })

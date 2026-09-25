@@ -12,6 +12,7 @@ import { LoadingState } from './components/LoadingState'
 import { PageLayout } from './components/PageLayout'
 import { MyOffersPage } from './offers/MyOffersPage'
 import { ProviderBlockingPage } from './provider-blocking/ProviderBlockingPage'
+import { ReceptionistBookingPage } from './receptionist-booking/ReceptionistBookingPage'
 import { ProtectedRoute } from './routing/ProtectedRoute'
 
 function PublicOnlyRoute({ children }: PropsWithChildren) {
@@ -71,6 +72,14 @@ function App() {
             element={(
               <ProtectedRoute allowedRoles={['ADMIN']}>
                 <ProviderBlockingPage />
+              </ProtectedRoute>
+            )}
+          />
+          <Route
+            path="/book-for-patient"
+            element={(
+              <ProtectedRoute allowedRoles={['RECEPTIONIST', 'ADMIN']}>
+                <ReceptionistBookingPage />
               </ProtectedRoute>
             )}
           />
