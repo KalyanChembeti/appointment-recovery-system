@@ -87,6 +87,8 @@ public class SecurityConfiguration {
                                 "/api/appointment-types",
                                 "/api/providers")
                         .hasAnyRole("PATIENT", "PROVIDER", "RECEPTIONIST", "ADMIN")
+                        .requestMatchers(HttpMethod.GET, "/api/patients")
+                        .hasAnyRole("RECEPTIONIST", "ADMIN")
                         // This is the first real per-role endpoint rule. The permitAll fallback
                         // remains deliberate for paths awaiting their own controller stage.
                         .requestMatchers(HttpMethod.GET, "/api/appointments")
