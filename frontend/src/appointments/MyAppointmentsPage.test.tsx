@@ -32,6 +32,7 @@ function appointment(overrides: Partial<AppointmentResponse> = {}): AppointmentR
     startAt: '2040-01-10T14:00:00Z',
     endAt: '2040-01-10T14:30:00Z',
     status: 'SCHEDULED',
+    patientDisplayName: 'Appointment Patient',
     ...overrides,
   }
 }

@@ -30,6 +30,7 @@ const APPOINTMENT: AppointmentResponse = {
   startAt: SLOT.startAt,
   endAt: SLOT.endAt,
   status: 'SCHEDULED',
+  patientDisplayName: 'Booking Patient',
 }
 
 type FetchScenario = {

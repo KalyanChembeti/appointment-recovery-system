@@ -38,6 +38,17 @@ export function HomePage() {
           </div>
         )}
 
+        {user?.role === 'ADMIN' && (
+          <div className="mt-7 flex flex-wrap gap-3">
+            <Link
+              className="inline-flex min-h-11 items-center justify-center rounded-xl bg-accent px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-accent-strong focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-brand/30"
+              to="/provider-blocking"
+            >
+              Block provider time
+            </Link>
+          </div>
+        )}
+
         <Card className="mt-8">
           <div className="flex items-start gap-4">
             <span className="grid size-11 shrink-0 place-items-center rounded-full bg-brand-soft text-brand" aria-hidden="true">

@@ -74,6 +74,26 @@ export type AppointmentResponse = {
   startAt: string
   endAt: string
   status: string
+  patientDisplayName: string | null
+}
+
+export type ProviderUnavailabilityStatus = 'ACTIVE' | 'PENDING' | 'CANCELLED'
+
+export type RequestProviderBlockRequest = {
+  providerId: number
+  startAt: string
+  endAt: string
+  reason?: string
+}
+
+export type ProviderUnavailabilityResponse = {
+  id: number
+  providerId: number
+  startAt: string
+  endAt: string
+  status: ProviderUnavailabilityStatus
+  reason: string | null
+  conflictingAppointmentIds: number[]
 }
 
 export type SlotOfferStatus =

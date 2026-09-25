@@ -31,6 +31,8 @@ describe('authenticated routing', () => {
     expect(await screen.findByText('Logged in as 81, role RECEPTIONIST')).toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: 'Sign in' })).not.toBeInTheDocument()
     expect(window.location.pathname).toBe('/')
+    expect(screen.queryByRole('link', { name: 'Block provider time' }))
+      .not.toBeInTheDocument()
   })
 
   it('logs out from home and navigates back to login', async () => {
@@ -97,5 +99,32 @@ describe('authenticated routing', () => {
     expect(window.location.pathname).toBe('/not-authorized')
     expect(screen.queryByRole('heading', { name: 'My offers' }))
       .not.toBeInTheDocument()
+  })
+
+  it('blocks the provider-blocking route for an authenticated non-admin role', async () => {
+    window.history.pushState({}, '', '/provider-blocking')
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(
+      jsonResponse({ userId: 86, role: 'PATIENT' }),
+    ))
+
+    render(<App />)
+
+    expect(await screen.findByRole('heading', { name: 'Not authorized' }))
+      .toBeInTheDocument()
+    expect(window.location.pathname).toBe('/not-authorized')
+    expect(screen.queryByRole('heading', { name: 'Block provider time' }))
+      .not.toBeInTheDocument()
+  })
+
+  it('shows the provider-blocking navigation only to an administrator', async () => {
+    window.history.pushState({}, '', '/')
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(
+      jsonResponse({ userId: 87, role: 'ADMIN' }),
+    ))
+
+    render(<App />)
+
+    expect(await screen.findByRole('link', { name: 'Block provider time' }))
+      .toHaveAttribute('href', '/provider-blocking')
   })
 })

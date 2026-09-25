@@ -255,6 +255,13 @@ type fixed and changes only the date and time. Changing either selection is equi
 already-supported cancel-and-book flow and would duplicate the Stage 2B cascading booking UI.
 Revisit a combined change flow only if later UX requirements justify that additional complexity.
 
+### Add provider self-service time blocking
+
+**Stage 2E scope boundary.** The provider time-blocking screen deliberately supports ADMIN
+users resolving appointment conflicts on a provider's behalf. PROVIDER self-service block
+requests remain deferred as a separate, simpler screen; this stage does not expose the ADMIN
+conflict-resolution workspace to PROVIDER users.
+
 ### Local application containers
 
 `docker-compose.yml` currently starts PostgreSQL 15 only. Add the Spring Boot application
