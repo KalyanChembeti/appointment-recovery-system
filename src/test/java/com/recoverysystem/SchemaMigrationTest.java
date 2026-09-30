@@ -69,7 +69,7 @@ class SchemaMigrationTest {
     }
 
     @Test
-    void flywayAppliesMigrationsThroughSpringSessionV4() throws SQLException {
+    void flywayAppliesMigrationsThroughSeedDataV5() throws SQLException {
         List<String> appliedVersions = new ArrayList<>();
 
         try (Connection connection = openConnection();
@@ -83,7 +83,7 @@ class SchemaMigrationTest {
             }
         }
 
-        assertEquals(List.of("1", "2", "3", "4"), appliedVersions);
+        assertEquals(List.of("1", "2", "3", "4", "5"), appliedVersions);
     }
 
     @Test
@@ -122,10 +122,10 @@ class SchemaMigrationTest {
         try (Connection connection = openConnection();
              PreparedStatement insert = connection.prepareStatement(
                      "INSERT INTO specialty (name) VALUES (?)")) {
-            insert.setString(1, "Cardiology");
+            insert.setString(1, "Unique Constraint Test Specialty");
             insert.executeUpdate();
 
-            insert.setString(1, "Cardiology");
+            insert.setString(1, "Unique Constraint Test Specialty");
             assertThrows(SQLException.class, insert::executeUpdate);
         }
     }

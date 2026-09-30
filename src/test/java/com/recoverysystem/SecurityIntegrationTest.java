@@ -86,7 +86,9 @@ class SecurityIntegrationTest {
     @BeforeEach
     void clearAuthenticationData() {
         jdbcTemplate.update("DELETE FROM SPRING_SESSION");
-        userRepository.deleteAll();
+        jdbcTemplate.execute("TRUNCATE TABLE audit_log, slot_offer, recovery_job, "
+                + "waitlist_entry, appointment, provider_schedule, provider_unavailability, "
+                + "provider, appointment_type, specialty, users RESTART IDENTITY CASCADE");
     }
 
     @Test

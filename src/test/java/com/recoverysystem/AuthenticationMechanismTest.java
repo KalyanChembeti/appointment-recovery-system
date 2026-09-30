@@ -18,6 +18,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -61,9 +62,14 @@ class AuthenticationMechanismTest {
     @Autowired
     private UserRepository userRepository;
 
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
+
     @BeforeEach
     void clearUsers() {
-        userRepository.deleteAll();
+        jdbcTemplate.execute("TRUNCATE TABLE audit_log, slot_offer, recovery_job, "
+                + "waitlist_entry, appointment, provider_schedule, provider_unavailability, "
+                + "provider, appointment_type, specialty, users RESTART IDENTITY CASCADE");
     }
 
     @Test

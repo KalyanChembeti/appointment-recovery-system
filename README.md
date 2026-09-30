@@ -37,6 +37,23 @@ mvn spring-boot:run
 
 App starts on `http://localhost:8080`.
 
+## Demo Accounts
+
+These credentials are public and intended only for this portfolio demo. Do not reuse the
+email addresses or shared password for any real account.
+
+All demo accounts use the shared password `Demo1234!`.
+
+| Email | Role |
+| --- | --- |
+| `demo.patient1@example.com` | Patient |
+| `demo.patient2@example.com` | Patient |
+| `demo.provider1@example.com` | Provider |
+| `demo.provider2@example.com` | Provider |
+| `demo.provider3@example.com` | Provider |
+| `demo.receptionist@example.com` | Receptionist |
+| `demo.admin@example.com` | Admin |
+
 ## Project structure
 
 ```
